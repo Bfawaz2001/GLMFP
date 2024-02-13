@@ -65,7 +65,7 @@ def load_model(filename):
 
 def main():
     fasta_file = "../data/uniprot_sprot.fasta"
-    output_filename = "../data/models/bigram_model.pkl"
+    output_filename = "../data/models/2mer_model.pkl"
 
     # Ensure the FASTA file exists
     if not os.path.exists(fasta_file):
