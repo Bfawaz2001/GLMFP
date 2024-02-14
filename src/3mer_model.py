@@ -1,92 +1,78 @@
-import pickle
-from Bio import SeqIO
-from collections import defaultdict
 import os
+import pickle
 import time
+from collections import defaultdict, Counter
+from Bio import SeqIO
+
 
 def build_trigram_model(fasta_file):
     """
-    Build a trigram (3-mer) model from a given FASTA file of proteins.
+    Builds a trigram model from a FASTA file containing protein sequences.
 
-    Args:
-    fasta_file (str): Path to the FASTA file.
+    Parameters:
+    - fasta_file: Path to the FASTA file.
 
     Returns:
-    dict: A dictionary representing the trigram model.
+    - trigram_model: A dictionary where keys are pairs of amino acids and values
+      are dictionaries of subsequent amino acids with their transition probabilities.
+    - start_2mer_counts: A Counter object counting the frequency of each starting 2-mer.
+    - start_2mer_probs: A dictionary with the probability of each starting 2-mer.
     """
-    # Initialize a defaultdict to count trigrams. The default factory is another defaultdict(int).
-    trigram_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    trigram_counts = defaultdict(lambda: defaultdict(int))
+    start_2mer_counts = Counter()
 
-    # Parse the FASTA file
     for record in SeqIO.parse(fasta_file, "fasta"):
         sequence = str(record.seq).upper()
-        # Generate trigrams and count them
-        for i in range(len(sequence) - 2):
-            first = sequence[i]
-            second = sequence[i + 1]
-            third = sequence[i + 2]
-            trigram_counts[first][second][third] += 1
+        if len(sequence) >= 2:
+            start_2mer_counts[sequence[:2]] += 1
+            for i in range(len(sequence) - 2):
+                first_2mer = sequence[i:i + 2]
+                third = sequence[i + 2]
+                trigram_counts[first_2mer][third] += 1
 
-    # Convert counts to probabilities
-    trigram_model = {}
-    for first, second_dict in trigram_counts.items():
-        trigram_model[first] = {}
-        for second, third_dict in second_dict.items():
-            total = sum(third_dict.values())
-            trigram_model[first][second] = {third: count / total for third, count in third_dict.items()}
+    trigram_model = {first_2mer: {third: count / sum(inner_dict.values())
+                                  for third, count in inner_dict.items()}
+                     for first_2mer, inner_dict in trigram_counts.items()}
 
-    return trigram_model
+    total_starts = sum(start_2mer_counts.values())
+    start_2mer_probs = {start_2mer: count / total_starts for start_2mer, count in start_2mer_counts.items()}
 
-def save_model(model, filename):
+    return trigram_model, start_2mer_counts, start_2mer_probs
+
+
+def save_model(model, start_2mer_counts, start_2mer_probs, filename):
     """
-    Save the model to a file using pickle.
+    Saves the trigram model, starting 2-mer counts, and their probabilities to a file.
 
-    Args:
-    model (dict): The trigram model to save.
-    filename (str): Path to the file where the model should be saved.
+    Parameters:
+    - model: The trigram model to be saved.
+    - start_2mer_counts: Starting 2-mer counts to be saved.
+    - start_2mer_probs: Starting 2-mer probabilities to be saved.
+    - filename: Path to the file where the model and counts will be saved.
     """
+    model_data = {'trigram_model': model, 'start_2mers': dict(start_2mer_counts), 'start_2mer_probs': start_2mer_probs}
     with open(filename, 'wb') as file:
-        pickle.dump(model, file)
+        pickle.dump(model_data, file)
 
-def load_model(filename):
-    """
-    Load a model from a file using pickle.
-
-    Args:
-    filename (str): Path to the file where the model is saved.
-
-    Returns:
-    dict: The loaded trigram model.
-    """
-    with open(filename, 'rb') as file:
-        model = pickle.load(file)
-    return model
 
 def main():
+    """
+    Main function to build and save the trigram model from protein sequences.
+    """
     fasta_file = "../data/uniprot_sprot.fasta"
     output_filename = "../data/models/3mer_model.pkl"
 
-    # Ensure the FASTA file exists
     if not os.path.exists(fasta_file):
         print(f"Error: The file {fasta_file} does not exist.")
         return
 
-    # Start timing
     start_time = time.time()
-
-    # Build the trigram model
-    trigram_model = build_trigram_model(fasta_file)
-
-    # Stop Timing
+    trigram_model, start_2mer_counts, start_2mer_probs = build_trigram_model(fasta_file)
     end_time = time.time()
 
-    # Save the model
-    save_model(trigram_model, output_filename)
+    save_model(trigram_model, start_2mer_counts, start_2mer_probs, output_filename)
 
-    print(f"Trigram model saved to {output_filename}")
-
-    # Print the elapsed time
-    print(f"Model creation and saving took {end_time - start_time} seconds.")
+    print(f"Model saved to {output_filename}. Took {end_time - start_time:.2f} seconds.")
 
 if __name__ == "__main__":
     main()

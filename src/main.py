@@ -1,5 +1,10 @@
 import pickle
 import random
+from collections import defaultdict
+
+def defaultdict_int():
+    """Returns a defaultdict with int as the default factory, replacing lambda."""
+    return defaultdict(int)
 
 def load_model(filename):
     """
@@ -33,47 +38,54 @@ def generate_protein(model, min_length, max_length, model_type):
 
     # 2mer generate proteins
     if model_type == '2mer':
-        # Start with a random amino acid
-        current_aa = random.choice(list(model.keys()))
-        protein.append(current_aa)
+        # Use probabilities to select the starting amino acid
+        start_aas = list(model['start_amino_acid_probs'].keys())
+        start_probs = list(model['start_amino_acid_probs'].values())
+        start_aa = random.choices(start_aas, weights=start_probs)[0]
+        protein.append(start_aa)
+        current_aa = start_aa
 
         while len(protein) < length:
-            next_aa = random.choices(list(model[current_aa].keys()), weights=model[current_aa].values())[0]
+            next_aa = random.choices(list(model['bigram_model'][current_aa].keys()), weights=model['bigram_model'][current_aa].values())[0]
             protein.append(next_aa)
             current_aa = next_aa
 
-    elif model_type == '3mer':
-        # Start with a random amino acid pair
-        current_pair = random.choice(list(model.keys()))
-        second_aa = random.choice(list(model[current_pair].keys()))
-        protein.append(current_pair + second_aa)
 
+    elif model_type == '3mer':
+        # Use probabilities to select the starting 2-mer
+        start_pairs = list(model['start_2mer_probs'].keys())
+        start_probs = list(model['start_2mer_probs'].values())
+        start_pair = random.choices(start_pairs, weights=start_probs)[0]
+        protein.append(start_pair[0])
+        protein.append(start_pair[1])
+        current_pair = start_pair
 
         while len(protein) < length:
-            try:
-                next_aa = random.choices(list(model[current_pair][second_aa].keys()), weights=model[current_pair][second_aa].values())[0]
+            next_aa_options = model['trigram_model'].get(current_pair, {})
+            if next_aa_options:
+                next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
                 protein.append(next_aa)
-                current_pair = protein[-2][-1] + second_aa  # This line might also need adjustment based on your exact logic.
-                second_aa = next_aa
-            except KeyError:
-                # Fallback: Choose the next amino acid randomly from all options
-                all_aas = 'ACDEFGHIKLMNPQRSTVWY'  # Considered all 20 standard amino acids
-                next_aa = random.choice(all_aas)
-                protein.append(next_aa)
-                # Adjust the logic here as needed to maintain continuity.
-
-    elif model_type == '5mer':
-        # Assume starting sequence of four amino acids
-        start_seq = random.choice(list(model.keys()))
-        protein = [start_seq]
-        while len(''.join(protein)) < length:
-            last_seq = ''.join(protein)[-4:]
-            if last_seq in model and model[last_seq]:
-                next_aa = random.choices(list(model[last_seq].keys()), weights=model[last_seq].values())[0]
-                protein.append(next_aa)
+                current_pair = protein[-2] + next_aa
             else:
                 break  # Stop if no valid continuation is found
-        protein = ''.join(protein)[:length]
+
+    elif model_type == '5mer':
+     # Use probabilities to select the starting 4-mer
+        start_4mers = list(model['start_4mer_probs'].keys())
+        start_4mer_probs = list(model['start_4mer_probs'].values())
+        start_4mer = random.choices(start_4mers, weights=start_4mer_probs)[0]
+        for aa in start_4mer:  # Add each amino acid of the 4-mer to the protein sequence
+            protein.append(aa)
+        current_4mer = start_4mer
+
+        while len(protein) < length:
+            next_aa_options = model['model'].get(current_4mer, {})
+            if next_aa_options:
+                next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
+                protein.append(next_aa)
+                current_4mer = ''.join(protein[-4:])  # Update the current 4-mer based on the last 4 amino acids in the sequence
+            else:
+                break  # Stop if no valid continuation is found
 
     return ''.join(protein)
 
@@ -112,7 +124,7 @@ def model_menu():
         model_type = '2mer'
         filename = PATH + '2mer_model.pkl'
     elif choice == '2':
-        model_type = PATH + '3mer'
+        model_type = '3mer'
         filename = PATH + '3mer_model.pkl'
     elif choice == '3':
         model_type = '5mer'
