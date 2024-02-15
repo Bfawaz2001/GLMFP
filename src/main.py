@@ -2,6 +2,9 @@ import pickle
 import random
 from collections import defaultdict
 
+#File path to the models
+MODEL_PATH = "../data/models/"
+RESULTS_PATH = "../data/results/"
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
     return defaultdict(int)
@@ -117,18 +120,15 @@ def model_menu():
     print("3. 5-mer")
     choice = input("Enter your choice (1, 2, or 3): ")
 
-    #File path to the models
-    PATH = "../data/models/"
-
     if choice == '1':
         model_type = '2mer'
-        filename = PATH + '2mer_model.pkl'
+        filename = MODEL_PATH + '2mer_model.pkl'
     elif choice == '2':
         model_type = '3mer'
-        filename = PATH + '3mer_model.pkl'
+        filename = MODEL_PATH + '3mer_model.pkl'
     elif choice == '3':
         model_type = '5mer'
-        filename = PATH + '5mer_model.pkl'
+        filename = MODEL_PATH + '5mer_model.pkl'
     else:
         print("Invalid choice. Returning to main menu.")
         return
@@ -148,7 +148,7 @@ def generate_proteins_interface(model, model_type):
     min_length = int(input("Enter the minimum length of the proteins: "))
     max_length = int(input("Enter the maximum length of the proteins: "))
 
-    with open(output_filename, 'w') as file:
+    with open(RESULTS_PATH+output_filename, 'w') as file:
         for i in range(num_proteins):
             protein = generate_protein(model, min_length, max_length, model_type)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
