@@ -1,0 +1,2 @@
+training data/uniprot_sprot.fasta filter=lfs diff=lfs merge=lfs -text
+models/6mer_model.pkl filter=lfs diff=lfs merge=lfs -text

@@ -90,6 +90,22 @@ def generate_protein(model, min_length, max_length, model_type):
             else:
                 break  # Stop if no valid continuation is found
 
+    elif model_type == '6mer':
+        start_5mers = list(model['start_5mer_probs'].keys())
+        start_5mer_probs = list(model['start_5mer_probs'].values())
+        start_5mer = random.choices(start_5mers, weights=start_5mer_probs)[0]
+        protein.extend(list(start_5mer))
+        current_5mer = start_5mer
+
+        while len(protein) < length:
+            next_aa_options = model['model'].get(current_5mer, {})
+            if next_aa_options:
+                next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
+                protein.append(next_aa)
+                current_5mer = ''.join(protein[-5:])
+            else:
+                break  # If no valid continuation is found
+
     return ''.join(protein)
 
 def main_menu():
@@ -115,10 +131,11 @@ def model_menu():
     Display the model selection menu and handle user input.
     """
     print("\nSelect a model:")
-    print("1. Bigram (2-mer)")
-    print("2. Trigram (3-mer)")
+    print("1. 2-mer")
+    print("2. 3-mer")
     print("3. 5-mer")
-    choice = input("Enter your choice (1, 2, or 3): ")
+    print("4, 6-mer")
+    choice = input("Enter your choice: ")
 
     if choice == '1':
         model_type = '2mer'
@@ -129,6 +146,9 @@ def model_menu():
     elif choice == '3':
         model_type = '5mer'
         filename = MODEL_PATH + '5mer_model.pkl'
+    elif choice == '4':  # Assuming '4' is the new option for 6-mer
+        model_type = '6mer'
+        filename = MODEL_PATH + '6mer_model.pkl'
     else:
         print("Invalid choice. Returning to main menu.")
         return
@@ -136,12 +156,11 @@ def model_menu():
     model = load_model(filename)
     generate_proteins_interface(model, model_type)
 
-
 def generate_proteins_interface(model, model_type):
     """
     Interface for generating proteins using the selected model.
     """
-    base_filename = input("Enter the name for the generated proteins file (without extension): ")
+    base_filename = input("\nEnter the name for the generated proteins file (without extension): ")
     output_filename = f"{base_filename}.fasta"
 
     num_proteins = int(input("Enter the number of proteins to be created: "))
@@ -159,3 +178,4 @@ def generate_proteins_interface(model, model_type):
 
 if __name__ == "__main__":
     main_menu()
+
