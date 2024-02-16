@@ -3,8 +3,8 @@ import random
 from collections import defaultdict
 
 #File path to the models
-MODEL_PATH = "../data/models/"
-RESULTS_PATH = "../data/results/"
+MODEL_PATH = "../../data/models/"
+RESULTS_PATH = "../../data/results/"
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
     return defaultdict(int)
