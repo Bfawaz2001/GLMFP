@@ -134,7 +134,7 @@ def model_menu():
     print("1. 2-mer")
     print("2. 3-mer")
     print("3. 5-mer")
-    print("4, 6-mer")
+    print("4. 6-mer")
     choice = input("Enter your choice: ")
 
     if choice == '1':
