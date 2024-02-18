@@ -183,7 +183,7 @@ def main(fasta_file, model_path):
     train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path)
 
 if __name__ == "__main__":
-    fasta_file = "../../data/training data/uniprot_sprot.fasta"
+    fasta_file = "../../../data/training data/uniprot_sprot.fasta"
     model_path = "../../models/rnn_model"
 
     main(fasta_file, model_path)

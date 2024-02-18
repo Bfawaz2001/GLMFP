@@ -58,8 +58,8 @@ def main():
     """
     Main function to build and save the 6-mer model.
     """
-    fasta_file = "../../data/training data/uniprot_sprot.fasta"  # Update with your FASTA file path
-    output_filename = "../../data/models/6mer_model.pkl"  # Update with your output path
+    fasta_file = "../../../data/training data/uniprot_sprot.fasta"  # Update with your FASTA file path
+    output_filename = "../../../data/models/6mer_model.pkl"  # Update with your output path
 
     start_time = time.time()
     model, start_5mer_probs = build_6mer_model(fasta_file)
