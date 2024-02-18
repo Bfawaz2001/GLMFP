@@ -9,25 +9,32 @@ from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 import time
 
-
 class ProteinSequenceDataset(Dataset):
-    """Custom Dataset for loading protein sequences."""
+    """Custom Dataset for loading and transforming protein sequences for sequence generation."""
 
-    def __init__(self, sequences):
+    def __init__(self, sequences, seq_len=50):
         """
         Initializes the dataset with protein sequences.
         :param sequences: A list of encoded protein sequences.
+        :param seq_len: The length of the sequence chunk to use for training.
         """
         self.sequences = sequences
+        self.seq_len = seq_len
 
     def __len__(self):
         """Returns the number of items in the dataset."""
         return len(self.sequences)
 
     def __getitem__(self, idx):
-        """Retrieves the item (protein sequence) at the specified index."""
-        return self.sequences[idx]
-
+        """
+        Retrieves the item at the specified index by preparing it as an input-target pair.
+        Here, each sequence is split into two parts: the input sequence and the target sequence.
+        """
+        # Here's a simplistic way to define inputs and targets. You might need to adjust it based on your actual use case.
+        seq = self.sequences[idx]
+        input_seq = seq[:-1]  # All but the last character
+        target_seq = seq[1:]  # All but the first character
+        return input_seq, target_seq
 
 def encode_sequences(sequences):
     """
@@ -43,12 +50,18 @@ def encode_sequences(sequences):
 
 def pad_collate(batch):
     """
-    Collate function to pad sequences to the same length for batching.
-    :param batch: A batch of protein sequences.
-    :return: A batch of padded sequences.
+    Collate function that pads input sequences and target sequences separately.
+    :param batch: A batch of tuples of (input_sequence, target_sequence).
+    :return: Two tensors: padded inputs and padded targets.
     """
-    sequences_padded = pad_sequence(batch, batch_first=True, padding_value=0)
-    return sequences_padded
+    # Separate the input and target sequences
+    input_seqs, target_seqs = zip(*batch)
+
+    # Pad the input and target sequences
+    input_seqs_padded = pad_sequence(input_seqs, batch_first=True, padding_value=0)
+    target_seqs_padded = pad_sequence(target_seqs, batch_first=True, padding_value=0)
+
+    return input_seqs_padded, target_seqs_padded
 
 
 class LSTMProteinGenerator(nn.Module):
@@ -103,11 +116,13 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         train_loss = 0.0
         for batch in train_loader:
             optimizer.zero_grad()
-            output = model(batch)
-            loss = criterion(output.transpose(1, 2), batch)
+            inputs, targets = batch  # Assuming batch contains inputs and targets
+            outputs = model(inputs)
+            targets = targets.long()  # Convert targets to Long type
+            loss = criterion(outputs.transpose(1, 2), targets)
             loss.backward()
 
-            clip_grad_norm_(model.parameters(), max_norm=1)  # Gradient Clipping
+            clip_grad_norm_(model.parameters(), max_norm=1)  # Apply gradient clipping
 
             optimizer.step()
             train_loss += loss.item()
@@ -116,8 +131,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         model.eval()
         with torch.no_grad():
             for batch in val_loader:
-                output = model(batch)
-                loss = criterion(output.transpose(1, 2), batch)
+                inputs, targets = batch  # Ensure validation batch is unpacked similarly
+                targets = targets.long()  # Ensure targets are Long type
+                outputs = model(inputs)
+                loss = criterion(outputs.transpose(1, 2), targets)
                 val_loss += loss.item()
 
         scheduler.step(val_loss / len(val_loader))
@@ -126,7 +143,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         print(
             f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, Validation Loss: {val_loss_avg}')
 
-        # Early Stopping and Model Checkpointing
+        # Checkpointing and early stopping
         if val_loss_avg < best_val_loss:
             print(f"Validation loss improved from {best_val_loss} to {val_loss_avg}. Saving model...")
             best_val_loss = val_loss_avg
@@ -134,10 +151,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             patience_counter = 0
         else:
             patience_counter += 1
-            print(f"Validation loss did not improve. Patience: {patience_counter}/{patience_limit}")
             if patience_counter >= patience_limit:
                 print("Early stopping triggered.")
-                break
+                break  # Break from the loop if patience limit is reached
 
     end_time = time.time()
     print(f"Training completed. Best model saved to {model_path}. Time taken: {end_time - start_time: .2f} seconds.")
@@ -165,7 +181,6 @@ def main(fasta_file, model_path):
 
     epochs = 10
     train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path)
-
 
 if __name__ == "__main__":
     fasta_file = "../../data/training data/uniprot_sprot.fasta"
