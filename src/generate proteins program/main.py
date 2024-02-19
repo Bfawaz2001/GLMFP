@@ -241,3 +241,4 @@ def generate_proteins_interface(model, model_type):
 if __name__ == "__main__":
     main_menu()
 
+
