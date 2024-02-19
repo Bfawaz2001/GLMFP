@@ -1,10 +1,14 @@
 import pickle
 import random
 from collections import defaultdict
+import subprocess
+import os
 
 #File path to the models
 MODEL_PATH = "../../data/models/"
 RESULTS_PATH = "../../data/results/"
+DIAMOND_BLASTP_PATH = "../../data/diamond blastp results/"
+
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
     return defaultdict(int)
@@ -115,16 +119,74 @@ def main_menu():
     while True:
         print("\nMain Menu:")
         print("1. Use a model")
-        print("2. Quit")
-        choice = input("Enter your choice (1 or 2): ")
+        print("2. Analyse Proteins")
+        print("3. Quit")
+        choice = input("Enter your choice: ")
 
         if choice == '1':
             model_menu()
         elif choice == '2':
+            analyse_proteins_menu()
+        elif choice == '3':
             print("Exiting the program.")
             break
         else:
-            print("Invalid choice. Please enter 1 or 2.")
+            print("Invalid choice. Please enter 1, 2, or 3.")
+
+def analyse_proteins_menu():
+    files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
+    print("\nSelect a FASTA file to analyse:")
+    for i, file in enumerate(files, 1):
+        print(f"{i}. {file}")
+    file_selection = int(input("Enter the number of the file: ")) - 1
+    selected_file = files[file_selection]
+    analyse_options(selected_file)
+
+
+def compare_against_ncbi_nr(fasta_file):
+    # Path to your DIAMOND database file
+    db_path = '../../data/diamond db/test_db_proteins.dmnd'
+
+    results_filename = input("Please enter the name of the results file: ")
+    # Output file path
+    output_file = DIAMOND_BLASTP_PATH+results_filename
+
+    # Constructing the DIAMOND command
+    diamond_cmd = [
+        'diamond', 'blastp',
+        '--db', db_path,
+        '--query', RESULTS_PATH+fasta_file,
+        '--out', output_file,
+        '--outfmt', '6',
+        '--max-target-seqs', '10',
+        '--evalue', '0.001'
+    ]
+
+    # Running the DIAMOND command
+    try:
+        print(f"\nRunning DIAMOND BLASTP against NCBI NR database for {fasta_file}...")
+        subprocess.run(diamond_cmd, check=True)
+        print(f"\nAnalysis complete. Results are saved in {output_file}.")
+    except subprocess.CalledProcessError as e:
+        print("\nError during DIAMOND execution:", e)
+
+
+def analyse_options(selected_file):
+    print("\nAnalysis Tool Selection Menu")
+    print("1. Compare against NCBI nr (non-redundant) database")
+    print("2. Label the functionalities (InterProScan)")
+    print("3. Visualise Proteins (AlphaFold)")
+    option = input("Select an option for analysis: ")
+
+    if option == '1':
+        compare_against_ncbi_nr(selected_file)
+    elif option == '2':
+        pass
+    elif option == '3':
+        pass
+    else:
+        print("Invalid option. Returning to main menu.")
+
 
 def model_menu():
     """
