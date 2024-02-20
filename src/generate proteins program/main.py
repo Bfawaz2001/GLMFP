@@ -112,9 +112,14 @@ def generate_protein(model, min_length, max_length, model_type):
 
     return ''.join(protein)
 
+
 def main_menu():
     """
-    Display the main menu and handle user input.
+    Display the main menu and handle user input for program navigation.
+
+    This function presents the user with options to use a model, analyse proteins,
+    or quit the program. It ensures that the user input is valid and calls the
+    appropriate function based on the user's choice.
     """
     while True:
         print("\nMain Menu:")
@@ -133,45 +138,84 @@ def main_menu():
         else:
             print("Invalid choice. Please enter 1, 2, or 3.")
 
+
 def analyse_proteins_menu():
-    files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
-    print("\nSelect a FASTA file to analyse:")
-    for i, file in enumerate(files, 1):
-        print(f"{i}. {file}")
-    file_selection = int(input("Enter the number of the file: ")) - 1
-    selected_file = files[file_selection]
-    analyse_options(selected_file)
+    """
+    Display a menu for protein analysis options.
+
+    Lists available FASTA files from the results directory and prompts the user
+    to select one for further analysis. Validates the user's selection and proceeds
+    to analysis options.
+    """
+    try:
+        files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
+        if not files:
+            print("No FASTA files found in the results directory.")
+            return
+
+        print("\nSelect a FASTA file to analyse:")
+        for i, file in enumerate(files, 1):
+            print(f"{i}. {file}")
+
+        file_selection = int(input("Enter the number of the file: ")) - 1
+
+        # Validate user selection
+        if file_selection < 0 or file_selection >= len(files):
+            print("Invalid selection. Please enter a valid number.")
+            return
+
+        selected_file = files[file_selection]
+        analyse_options(selected_file)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
 def compare_against_ncbi_nr(fasta_file):
-    # Path to your DIAMOND database file
+    """
+    Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP.
+
+    Args:
+        fasta_file (str): The name of the FASTA file selected for comparison.
+
+    The function constructs and executes a DIAMOND BLASTP command and saves the results
+    to a specified output file. It handles errors gracefully and informs the user upon completion.
+    """
     db_path = '../../data/diamond db/test_db_proteins.dmnd'
+    results_filename = input("Please enter the name of the results file: ").strip()
+    if not results_filename:
+        print("Invalid filename. Please provide a valid name.")
+        return
+    output_file = os.path.join(DIAMOND_BLASTP_PATH, results_filename)
 
-    results_filename = input("Please enter the name of the results file: ")
-    # Output file path
-    output_file = DIAMOND_BLASTP_PATH+results_filename
-
-    # Constructing the DIAMOND command
     diamond_cmd = [
         'diamond', 'blastp',
         '--db', db_path,
-        '--query', RESULTS_PATH+fasta_file,
+        '--query', os.path.join(RESULTS_PATH, fasta_file),
         '--out', output_file,
         '--outfmt', '6',
         '--max-target-seqs', '10',
         '--evalue', '0.001'
     ]
 
-    # Running the DIAMOND command
     try:
         print(f"\nRunning DIAMOND BLASTP against NCBI NR database for {fasta_file}...")
         subprocess.run(diamond_cmd, check=True)
         print(f"\nAnalysis complete. Results are saved in {output_file}.")
     except subprocess.CalledProcessError as e:
-        print("\nError during DIAMOND execution:", e)
-
+        print("\nError during DIAMOND execution: ", e)
 
 def analyse_options(selected_file):
+    """
+    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for analysis.
+
+    The function supports comparing the selected file against the NCBI nr database,
+    labeling functionalities (InterProScan), and visualizing proteins (AlphaFold).
+    Future implementations can replace 'pass' with actual function calls.
+    """
     print("\nAnalysis Tool Selection Menu")
     print("1. Compare against NCBI nr (non-redundant) database")
     print("2. Label the functionalities (InterProScan)")
@@ -181,12 +225,31 @@ def analyse_options(selected_file):
     if option == '1':
         compare_against_ncbi_nr(selected_file)
     elif option == '2':
-        pass
+        label_functionalities(selected_file)  # Placeholder for future implementation
     elif option == '3':
-        pass
+        visualise_proteins(selected_file)  # Placeholder for future implementation
     else:
         print("Invalid option. Returning to main menu.")
 
+def label_functionalities(selected_file):
+    """
+    Placeholder function for labeling functionalities with InterProScan.
+    Future implementation should include the actual call to InterProScan and handle the results.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for functionality labeling.
+    """
+    print("Labeling functionalities with InterProScan is not implemented yet.")
+
+def visualise_proteins(selected_file):
+    """
+    Placeholder function for visualizing proteins with AlphaFold.
+    Future implementation should include the actual call to AlphaFold and handle the visualization.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for protein visualization.
+    """
+    print("Visualizing proteins with AlphaFold is not implemented yet.")
 
 def model_menu():
     """
@@ -240,5 +303,3 @@ def generate_proteins_interface(model, model_type):
 
 if __name__ == "__main__":
     main_menu()
-    print("he")
-
