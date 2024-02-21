@@ -112,6 +112,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     patience_limit = 10
 
     for epoch in range(epochs):
+        print('Epoch {}/{}'.format(epoch + 1, epochs))
         model.train()
         train_loss = 0.0
         for batch in train_loader:
@@ -164,6 +165,7 @@ def main(fasta_file, model_path):
     vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
 
     train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.2)
+    print("Building model...")
 
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
