@@ -8,6 +8,7 @@ import os
 MODEL_PATH = "../../data/models/"
 RESULTS_PATH = "../../data/results/"
 DIAMOND_BLASTP_PATH = "../../data/diamond blastp results/"
+DIAMOND_DB_PATH = "../../../diamond db/nr.dmnd"
 
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
@@ -190,7 +191,7 @@ def compare_against_ncbi_nr(fasta_file):
 
     diamond_cmd = [
         'diamond', 'blastp',
-        '--db', db_path,
+        '--db', DIAMOND_DB_PATH,
         '--query', os.path.join(RESULTS_PATH, fasta_file),
         '--out', output_file,
         '--outfmt', '6',
