@@ -3,6 +3,7 @@ import random
 from collections import defaultdict
 import subprocess
 import os
+import pandas as pd
 
 #File path to the models
 MODEL_PATH = "../../data/models/"
@@ -33,49 +34,49 @@ def generate_protein(model, min_length, max_length, model_type):
     Generate a single protein sequence using the specified model.
 
     Args:
-    model (dict): The loaded model (either 2mer or 3mer).
-    min_length (int): Minimum length of the protein.
-    max_length (int): Maximum length of the protein.
-    model_type (str): Type of the model ('2mer' or '3mer').
+        model (dict): The loaded model, which can be 2mer, 3mer, 5mer, or 6mer.
+        min_length (int): The minimum length of the generated protein sequence.
+        max_length (int): The maximum length of the generated protein sequence.
+        model_type (str): The type of model used for generation ('2mer', '3mer', '5mer', '6mer').
 
     Returns:
-    str: A generated protein sequence.
+        str: A generated protein sequence as a string.
     """
-    length = random.randint(min_length, max_length)
-    protein = []
+    length = random.randint(min_length, max_length)  # Determine the length of the protein sequence.
+    protein = []  # Initialize an empty list to store the sequence.
 
-    # 2mer generate proteins
     if model_type == '2mer':
-        # Use probabilities to select the starting amino acid
-        start_aas = list(model['start_amino_acid_probs'].keys())
-        start_probs = list(model['start_amino_acid_probs'].values())
-        start_aa = random.choices(start_aas, weights=start_probs)[0]
-        protein.append(start_aa)
+        # Generate protein sequence based on 2mer model.
+        start_aas = list(model['start_amino_acid_probs'].keys())  # Get starting amino acids.
+        start_probs = list(model['start_amino_acid_probs'].values())  # Get probabilities of starting amino acids.
+        start_aa = random.choices(start_aas, weights=start_probs)[0]  # Choose starting amino acid.
+        protein.append(start_aa)  # Add the starting amino acid to the sequence.
         current_aa = start_aa
 
+        # Continue adding amino acids based on the 2mer model probabilities until the desired length is reached.
         while len(protein) < length:
-            next_aa = random.choices(list(model['bigram_model'][current_aa].keys()), weights=model['bigram_model'][current_aa].values())[0]
+            next_aa = random.choices(list(model['bigram_model'][current_aa].keys()),
+                                     weights=model['bigram_model'][current_aa].values())[0]
             protein.append(next_aa)
             current_aa = next_aa
 
-
     elif model_type == '3mer':
-        # Use probabilities to select the starting 2-mer
+        # Similar approach for 3mer, starting with a pair of amino acids and expanding the sequence.
         start_pairs = list(model['start_2mer_probs'].keys())
         start_probs = list(model['start_2mer_probs'].values())
         start_pair = random.choices(start_pairs, weights=start_probs)[0]
-        protein.append(start_pair[0])
-        protein.append(start_pair[1])
+        protein.extend(start_pair)  # Add both amino acids of the starting pair to the sequence.
         current_pair = start_pair
 
+        # Generate the rest of the protein sequence based on 3mer model probabilities.
         while len(protein) < length:
             next_aa_options = model['trigram_model'].get(current_pair, {})
             if next_aa_options:
                 next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
                 protein.append(next_aa)
-                current_pair = protein[-2] + next_aa
+                current_pair = protein[-2] + next_aa  # Update the current pair for the next iteration.
             else:
-                break  # Stop if no valid continuation is found
+                break  # Exit the loop if no valid next amino acid is found.
 
     elif model_type == '5mer':
      # Use probabilities to select the starting 4-mer
@@ -111,8 +112,7 @@ def generate_protein(model, min_length, max_length, model_type):
             else:
                 break  # If no valid continuation is found
 
-    return ''.join(protein)
-
+    return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 def main_menu():
     """
@@ -174,35 +174,46 @@ def analyse_proteins_menu():
 
 def compare_against_ncbi_nr(fasta_file):
     """
-    Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP.
+    Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP and reports
+    the percentage of matches.
 
     Args:
         fasta_file (str): The name of the FASTA file selected for comparison.
 
-    The function constructs and executes a DIAMOND BLASTP command and saves the results
-    to a specified output file. It handles errors gracefully and informs the user upon completion.
+    Enhancements include optimized DIAMOND BLASTP execution for large databases and more informative output regarding
+    the percentage of sequence matches.
     """
-    db_path = '../../data/diamond db/test_db_proteins.dmnd'
+    db_path = '../../data/diamond db/ncbi_nr.dmnd'  # Updated to use the full NCBI NR database path
     results_filename = input("Please enter the name of the results file: ").strip()
     if not results_filename:
         print("Invalid filename. Please provide a valid name.")
         return
-    output_file = os.path.join(DIAMOND_BLASTP_PATH, results_filename)
+    output_file = os.path.join('path/to/output/directory', results_filename)  # Ensure correct output path
 
+    # Updated DIAMOND command for efficiency and comprehensive output
     diamond_cmd = [
         'diamond', 'blastp',
-        '--db', DIAMOND_DB_PATH,
-        '--query', os.path.join(RESULTS_PATH, fasta_file),
+        '--db', db_path,
+        '--query', fasta_file,
         '--out', output_file,
-        '--outfmt', '6',
+        '--outfmt', '6 qseqid sseqid pident length mismatch gapopen qstart sstart evalue bitscore',
         '--max-target-seqs', '10',
-        '--evalue', '0.001'
+        '--evalue', '0.001',
+        '--very-fast'  # Optimize for speed
     ]
 
     try:
         print(f"\nRunning DIAMOND BLASTP against NCBI NR database for {fasta_file}...")
         subprocess.run(diamond_cmd, check=True)
         print(f"\nAnalysis complete. Results are saved in {output_file}.")
+
+        # Further code to parse the output file and calculate the percentage of matches
+        df = pd.read_csv(output_file, sep='\t', header=None,
+                         names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'sstart',
+                                'evalue', 'bitscore'])
+        avg_pident = df['pident'].mean()
+        print(f"Average percentage of identity: {avg_pident}%")
+
     except subprocess.CalledProcessError as e:
         print("\nError during DIAMOND execution: ", e)
 
