@@ -1,5 +1,6 @@
 import pickle
 import random
+import time
 from collections import defaultdict
 import subprocess
 import os
@@ -183,29 +184,30 @@ def compare_against_ncbi_nr(fasta_file):
     Enhancements include optimized DIAMOND BLASTP execution for large databases and more informative output regarding
     the percentage of sequence matches.
     """
-    db_path = '../../data/diamond db/ncbi_nr.dmnd'  # Updated to use the full NCBI NR database path
     results_filename = input("Please enter the name of the results file: ").strip()
     if not results_filename:
         print("Invalid filename. Please provide a valid name.")
         return
-    output_file = os.path.join('path/to/output/directory', results_filename)  # Ensure correct output path
+    output_file = DIAMOND_BLASTP_PATH + results_filename  # Ensure correct output path
 
     # Updated DIAMOND command for efficiency and comprehensive output
     diamond_cmd = [
         'diamond', 'blastp',
-        '--db', db_path,
-        '--query', fasta_file,
+        '--db', DIAMOND_DB_PATH,
+        '--query', RESULTS_PATH+fasta_file,
         '--out', output_file,
-        '--outfmt', '6 qseqid sseqid pident length mismatch gapopen qstart sstart evalue bitscore',
+        '--outfmt', '6',
         '--max-target-seqs', '10',
-        '--evalue', '0.001',
-        '--very-fast'  # Optimize for speed
+        '--evalue', '0.001'
     ]
 
     try:
         print(f"\nRunning DIAMOND BLASTP against NCBI NR database for {fasta_file}...")
+        start_time = time.time()
         subprocess.run(diamond_cmd, check=True)
+        end_time = time.time()
         print(f"\nAnalysis complete. Results are saved in {output_file}.")
+        print(f"Time taken: {end_time}")
 
         # Further code to parse the output file and calculate the percentage of matches
         df = pd.read_csv(output_file, sep='\t', header=None,
