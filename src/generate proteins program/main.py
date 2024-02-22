@@ -193,7 +193,6 @@ def compare_against_ncbi_nr(fasta_file):
         return
     output_file = DIAMOND_BLASTP_PATH + results_filename  # Ensure correct output path
 
-    # Updated DIAMOND command for efficiency and comprehensive output
     diamond_cmd = [
         'diamond', 'blastp',
         '--db', DIAMOND_DB_PATH,
@@ -202,7 +201,6 @@ def compare_against_ncbi_nr(fasta_file):
         '--outfmt', '6',
         '--max-target-seqs', '10',
         '--evalue', '0.001',
-        '--sensitive'
     ]
 
     try:
