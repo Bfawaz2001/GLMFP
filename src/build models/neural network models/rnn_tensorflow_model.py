@@ -1,4 +1,3 @@
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Embedding, SimpleRNN, Dense
 from tensorflow.keras.optimizers import Adam
