@@ -106,8 +106,10 @@ def main(fasta_file):
 
     # Train the model with the training data and validation on the test set.
     print("Training the model...")
+    start_time = time.time()
     model.fit(X_train, X_train, epochs=epochs, batch_size=batch_size,
               validation_data=(X_test, X_test), callbacks=[checkpoint_callback])
+    end_time = time.time()
 
     # Evaluate the model's performance on the test set.
     print("Evaluating the model...")
@@ -117,6 +119,7 @@ def main(fasta_file):
     # Save the final model to disk.
     model.save('protein_rnn_model_final.h5')
     print("Model training and evaluation complete.")
+    print("Time elapsed: ", end_time - start_time)
 
 
 if __name__ == "__main__":
