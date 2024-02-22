@@ -35,7 +35,7 @@ def build_7mer_model(fasta_file):
     for prefix, suffixes in model.items():
         total = sum(suffixes.values())
         for suffix in suffixes:
-            suffixes[suffix] = suffixes[suffix] / total
+            suffixes[suffix] = suffixes[suffix]/total
 
     total_starts = sum(start_6mer_counts.values())
     start_6mer_probs = {k: v / total_starts for k, v in start_6mer_counts.items()}
