@@ -1,0 +1,4 @@
+data/training[[:space:]]data/uniprot_sprot.fasta filter=lfs diff=lfs merge=lfs -text
+data/models/6mer_model.pkl filter=lfs diff=lfs merge=lfs -text
+data/models/7mer_model.pkl filter=lfs diff=lfs merge=lfs -text
+data/diamond[[:space:]]db/nr.dmnd filter=lfs diff=lfs merge=lfs -text
