@@ -10,9 +10,9 @@ import requests
 
 #File path to the models
 MODEL_PATH = "../../data/models/"
-RESULTS_PATH = "../../data/results/"
-DIAMOND_BLASTP_PATH = "../../data/diamond blastp results/"
-DIAMOND_DB_PATH = "../../data/diamond db/nr.dmnd"
+RESULTS_PATH = "../../data/generated proteins/"
+DIAMOND_RESULTS_PATH = "../../data/diamond blastp results/"
+DIAMOND_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
 INTERPRO_RESULTS_PATH = "../../data/interpro results/"
 
 def defaultdict_int():
@@ -148,14 +148,14 @@ def analyse_proteins_menu():
     """
     Display a menu for protein analysis options.
 
-    Lists available FASTA files from the results directory and prompts the user
+    Lists available FASTA files from the generated proteins directory and prompts the user
     to select one for further analysis. Validates the user's selection and proceeds
     to analysis options.
     """
     try:
         files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
         if not files:
-            print("No FASTA files found in the results directory.")
+            print("No FASTA files found in the generated proteins directory.")
             return
 
         print("\nSelect a FASTA file to analyse:")
@@ -187,11 +187,11 @@ def compare_against_ncbi_nr(fasta_file):
     Enhancements include optimized DIAMOND BLASTP execution for large databases and more informative output regarding
     the percentage of sequence matches.
     """
-    results_filename = input("Please enter the name of the results file: ").strip()
+    results_filename = input("Please enter the name of the generated proteins file: ").strip()
     if not results_filename:
         print("Invalid filename. Please provide a valid name.")
         return
-    output_file = DIAMOND_BLASTP_PATH + results_filename  # Ensure correct output path
+    output_file = DIAMOND_RESULTS_PATH + results_filename  # Ensure correct output path
 
     diamond_cmd = [
         'diamond', 'blastp',
@@ -274,7 +274,7 @@ def label_functionalities(selected_file):
             enhanced_output = {
                 "message": "InterProScan analysis completed successfully.",
                 "results_path": output_file_path,
-                "details": results  # This inserts the actual results from the API into our output
+                "details": results  # This inserts the actual generated proteins from the API into our output
             }
 
             # Save the enhanced output to a file in JSON format
