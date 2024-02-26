@@ -14,6 +14,7 @@ RESULTS_PATH = "../../data/generated proteins/"
 DIAMOND_RESULTS_PATH = "../../data/diamond blastp results/"
 DIAMOND_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
 INTERPRO_RESULTS_PATH = "../../data/interpro results/"
+ALPHA_FOLD_RESULTS_PATH = "../../data/alpha fold results/"
 
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
@@ -236,16 +237,20 @@ def analyse_options(selected_file):
     print("1. Compare against NCBI nr (non-redundant) database")
     print("2. Label the functionalities (InterProScan)")
     print("3. Visualise Proteins (AlphaFold)")
+    print("4. Go back to Main Menu")
     option = input("Select an option for analysis: ")
 
     if option == '1':
         compare_against_ncbi_nr(selected_file)
     elif option == '2':
-        label_functionalities(selected_file)  # Placeholder for future implementation
+        label_functionalities(selected_file)
     elif option == '3':
-        visualise_proteins(selected_file)  # Placeholder for future implementation
+        visualise_proteins(selected_file)
+    elif option == "4":
+        print("\nGoing Back to main menu...")
     else:
-        print("Invalid option. Returning to main menu.")
+        print("\nInvalid option. Returning to main menu.")
+        return
 
 
 def label_functionalities(selected_file):
@@ -308,6 +313,7 @@ def model_menu():
     print("2. 3-mer")
     print("3. 5-mer")
     print("4. 6-mer")
+    print("5. Back to Main Menu")
     choice = input("Enter your choice: ")
 
     if choice == '1':
@@ -322,6 +328,9 @@ def model_menu():
     elif choice == '4':  # Assuming '4' is the new option for 6-mer
         model_type = '6mer'
         filename = MODEL_PATH + '6mer_model.pkl'
+    elif choice == '5':
+        print("\nGoing back to Main Menu...")
+        return
     else:
         print("Invalid choice. Returning to main menu.")
         return
