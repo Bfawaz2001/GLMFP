@@ -130,7 +130,7 @@ def main_menu():
     while True:
         print("\nMain Menu:")
         print("1. Use a model")
-        print("2. Analyse Proteins")
+        print("2. Analyse Generated Proteins")
         print("3. Quit")
         choice = input("Enter your choice: ")
 
@@ -210,7 +210,7 @@ def compare_against_ncbi_nr(fasta_file):
         subprocess.run(diamond_cmd, check=True)
         end_time = time.time()
         print(f"\nAnalysis complete. Results are saved in {output_file}.")
-        print(f"Time taken: {end_time}")
+        print(f"Time taken: {start_time-end_time} seconds")
 
         # Further code to parse the output file and calculate the percentage of matches
         df = pd.read_csv(output_file, sep='\t', header=None,
@@ -346,8 +346,8 @@ def generate_proteins_interface(model, model_type):
     output_filename = f"{base_filename}.fasta"
 
     num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the proteins: "))
-    max_length = int(input("Enter the maximum length of the proteins: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
 
     with open(RESULTS_PATH+output_filename, 'w') as file:
         for i in range(num_proteins):
