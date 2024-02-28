@@ -52,7 +52,7 @@ def main():
     Main function to build and save the bigram model from protein sequences.
     """
     fasta_file = "../../../data/training data/uniprot_sprot.fasta"
-    output_filename = "../../../data/models/2mer_model.pkl"
+    output_filename = "../../../data/models/n-gram/2mer_model.pkl"
 
     if not os.path.exists(fasta_file):
         print(f"Error: The file {fasta_file} does not exist.")

@@ -60,7 +60,7 @@ def save_model(model, start_4mer_probs, filename):
 
 def main():
     fasta_file = "../../../data/training data/uniprot_sprot.fasta"
-    output_filename = "../../../data/models/5mer_model.pkl"
+    output_filename = "../../../data/models/n-gram/5mer_model.pkl"
 
     start_time = time.time()
     model, start_4mer_probs = build_5mer_model(fasta_file)

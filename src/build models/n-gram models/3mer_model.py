@@ -60,7 +60,7 @@ def main():
     Main function to build and save the trigram model from protein sequences.
     """
     fasta_file = "../../../data/training data/uniprot_sprot.fasta"
-    output_filename = "../../../data/models/3mer_model.pkl"
+    output_filename = "../../../data/models/n-gram/3mer_model.pkl"
 
     if not os.path.exists(fasta_file):
         print(f"Error: The file {fasta_file} does not exist.")

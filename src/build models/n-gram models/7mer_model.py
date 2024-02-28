@@ -59,7 +59,7 @@ def main():
     Main execution function to build and save the 7-mer model.
     """
     fasta_file = "../../../data/training data/uniprot_sprot.fasta"  # Adjust with actual FASTA file path
-    output_filename = "../../../data/models/7mer_model.pkl"  # Adjust with desired output path
+    output_filename = "../../../data/models/n-gram/7mer_model.pkl"  # Adjust with desired output path
 
     start_time = time.time()
     model, start_6mer_probs = build_7mer_model(fasta_file)
