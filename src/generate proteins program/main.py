@@ -34,6 +34,16 @@ def load_model(filename):
         model = pickle.load(file)
     return model
 
+def load_rnn_model(model_path):
+    return
+
+def generate_protein_rnn(model, min_length, max_length):
+    return
+# Implementation for generating a protein sequence with the RNN model
+# This will involve initializing a sequence and iteratively predicting the next amino acid until
+# the sequence reaches the desired length
+
+
 def generate_protein(model, min_length, max_length, model_type):
     """
     Generate a single protein sequence using the specified model.
@@ -119,63 +129,6 @@ def generate_protein(model, min_length, max_length, model_type):
 
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
-def main_menu():
-    """
-    Display the main menu and handle user input for program navigation.
-
-    This function presents the user with options to use a model, analyse proteins,
-    or quit the program. It ensures that the user input is valid and calls the
-    appropriate function based on the user's choice.
-    """
-    while True:
-        print("\nMain Menu:")
-        print("1. Use a model")
-        print("2. Analyse Generated Proteins")
-        print("3. Quit")
-        choice = input("Enter your choice: ")
-
-        if choice == '1':
-            model_menu()
-        elif choice == '2':
-            analyse_proteins_menu()
-        elif choice == '3':
-            print("Exiting the program.")
-            break
-        else:
-            print("Invalid choice. Please enter 1, 2, or 3.")
-
-
-def analyse_proteins_menu():
-    """
-    Display a menu for protein analysis options.
-
-    Lists available FASTA files from the generated proteins directory and prompts the user
-    to select one for further analysis. Validates the user's selection and proceeds
-    to analysis options.
-    """
-    try:
-        files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
-        if not files:
-            print("No FASTA files found in the generated proteins directory.")
-            return
-
-        print("\nSelect a FASTA file to analyse:")
-        for i, file in enumerate(files, 1):
-            print(f"{i}. {file}")
-
-        file_selection = int(input("Enter the number of the file: ")) - 1
-
-        # Validate user selection
-        if file_selection < 0 or file_selection >= len(files):
-            print("Invalid selection. Please enter a valid number.")
-            return
-
-        selected_file = files[file_selection]
-        analyse_options(selected_file)
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
 
 def compare_against_ncbi_nr(fasta_file):
     """
@@ -221,37 +174,6 @@ def compare_against_ncbi_nr(fasta_file):
 
     except subprocess.CalledProcessError as e:
         print("\nError during DIAMOND execution: ", e)
-
-def analyse_options(selected_file):
-    """
-    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
-
-    Args:
-    selected_file (str): The filename of the selected FASTA file for analysis.
-
-    The function supports comparing the selected file against the NCBI nr database,
-    labeling functionalities (InterProScan), and visualizing proteins (AlphaFold).
-    Future implementations can replace 'pass' with actual function calls.
-    """
-    print("\nAnalysis Tool Selection Menu")
-    print("1. Compare against NCBI nr (non-redundant) database")
-    print("2. Label the functionalities (InterProScan)")
-    print("3. Visualise Proteins (AlphaFold)")
-    print("4. Go back to Main Menu")
-    option = input("Select an option for analysis: ")
-
-    if option == '1':
-        compare_against_ncbi_nr(selected_file)
-    elif option == '2':
-        label_functionalities(selected_file)
-    elif option == '3':
-        visualise_proteins(selected_file)
-    elif option == "4":
-        print("\nGoing Back to main menu...")
-    else:
-        print("\nInvalid option. Returning to main menu.")
-        return
-
 
 def label_functionalities(selected_file):
     """
@@ -302,13 +224,116 @@ def visualise_proteins(selected_file):
     Args:
     selected_file (str): The filename of the selected FASTA file for protein visualization.
     """
-    print("Visualizing proteins with AlphaFold is not implemented yet.")
+    fasta_file_path = f'{RESULTS_PATH}{selected_file}'
+    output_directory = ALPHA_FOLD_RESULTS_PATH + selected_file.split('.')[0] + '_alpha_fold_results/'
 
-def model_menu():
+    # Make sure the output directory exists
+    os.makedirs(output_directory, exist_ok=True)
+
+    # AlphaFold command setup
+    # Note: This command assumes you have a script or executable named 'run_alphafold' that is set up to
+    # run AlphaFold with the necessary parameters and environment configurations.
+    alpha_fold_cmd = [
+        'run_alphafold',  # This should be the path to your AlphaFold running script or executable
+        '--fasta_path', fasta_file_path,
+        '--output_dir', output_directory,
+        '--model_names', 'model_1,model_2,model_3,model_4,model_5',
+        '--preset', 'full_dbs',
+        '--use_gpu'
+    ]
+
+    try:
+        print(f"Running AlphaFold for {selected_file}...")
+        subprocess.run(alpha_fold_cmd, check=True)
+        print(f"Protein visualization completed. Check the output in {output_directory}.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error running AlphaFold: {e}")
+
+def generate_proteins_interface(model, model_type):
+    """
+    Interface for generating proteins using the selected model.
+    """
+    base_filename = input("\nEnter the name for the generated proteins file (without extension): ")
+    output_filename = f"{base_filename}.fasta"
+
+    num_proteins = int(input("Enter the number of proteins to be created: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
+
+    with open(RESULTS_PATH+output_filename, 'w') as file:
+        for i in range(num_proteins):
+            protein = generate_protein(model, min_length, max_length, model_type)
+            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
+            file.write(f">Protein_{i + 1}\n{formatted_protein}\n")
+
+    print(f"Generated proteins saved to {output_filename}")
+
+def analyse_options(selected_file):
+    """
+    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for analysis.
+
+    The function supports comparing the selected file against the NCBI nr database,
+    labeling functionalities (InterProScan), and visualizing proteins (AlphaFold).
+    Future implementations can replace 'pass' with actual function calls.
+    """
+    print("\nAnalysis Tool Selection Menu")
+    print("1. Compare against NCBI nr (non-redundant) database")
+    print("2. Label the functionalities (InterProScan)")
+    print("3. Visualise Proteins (AlphaFold)")
+    print("4. Go back to Main Menu")
+    option = input("Select an option for analysis: ")
+
+    if option == '1':
+        compare_against_ncbi_nr(selected_file)
+    elif option == '2':
+        label_functionalities(selected_file)
+    elif option == '3':
+        visualise_proteins(selected_file)
+    elif option == "4":
+        print("\nGoing Back to main menu...")
+    else:
+        print("\nInvalid option. Returning to main menu.")
+        return
+
+def analyse_proteins_menu():
+    """
+    Display a menu for protein analysis options.
+
+    Lists available FASTA files from the generated proteins directory and prompts the user
+    to select one for further analysis. Validates the user's selection and proceeds
+    to analysis options.
+    """
+    try:
+        files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
+        if not files:
+            print("No FASTA files found in the generated proteins directory.")
+            return
+
+        print("\nSelect a FASTA file to analyse:")
+        for i, file in enumerate(files, 1):
+            print(f"{i}. {file}")
+
+        file_selection = int(input("Enter the number of the file: ")) - 1
+
+        # Validate user selection
+        if file_selection < 0 or file_selection >= len(files):
+            print("Invalid selection. Please enter a valid number.")
+            return
+
+        selected_file = files[file_selection]
+        analyse_options(selected_file)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def ngram_model_menu():
     """
     Display the model selection menu and handle user input.
     """
-    print("\nSelect a model:")
+    print("\nSelect an N-gram model:")
     print("1. 2-mer")
     print("2. 3-mer")
     print("3. 5-mer")
@@ -338,25 +363,55 @@ def model_menu():
     model = load_model(filename)
     generate_proteins_interface(model, model_type)
 
-def generate_proteins_interface(model, model_type):
+def rnn_model_menu():
+    pass
+
+
+def model_menu():
     """
-    Interface for generating proteins using the selected model.
+    Display the model selection menu and handle user input.
     """
-    base_filename = input("\nEnter the name for the generated proteins file (without extension): ")
-    output_filename = f"{base_filename}.fasta"
+    print("\nSelect a model:")
+    print("1. N-gram Models")
+    print("2. RNN Models")
+    print("3. Back to Main Menu")
+    choice = input("Enter your choice: ")
 
-    num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the amino acids: "))
-    max_length = int(input("Enter the maximum length of the amino acids: "))
+    if choice == '1':
+        ngram_model_menu()
+    elif choice == '2':
+        rnn_model_menu()
+    elif choice == '3':
+        print("\nGoing back to Main Menu...")
+        return
+    else:
+        print("Invalid choice. Returning to main menu.")
+        return
 
-    with open(RESULTS_PATH+output_filename, 'w') as file:
-        for i in range(num_proteins):
-            protein = generate_protein(model, min_length, max_length, model_type)
-            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
-            file.write(f">Protein_{i + 1}\n{formatted_protein}\n")
+def main_menu():
+    """
+    Display the main menu and handle user input for program navigation.
 
-    print(f"Generated proteins saved to {output_filename}")
+    This function presents the user with options to use a model, analyse proteins,
+    or quit the program. It ensures that the user input is valid and calls the
+    appropriate function based on the user's choice.
+    """
+    while True:
+        print("\nMain Menu:")
+        print("1. Use a model")
+        print("2. Analyse Generated Proteins")
+        print("3. Quit")
+        choice = input("Enter your choice: ")
 
+        if choice == '1':
+            model_menu()
+        elif choice == '2':
+            analyse_proteins_menu()
+        elif choice == '3':
+            print("Exiting the program.")
+            break
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
 if __name__ == "__main__":
     main_menu()
