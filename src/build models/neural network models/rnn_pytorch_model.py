@@ -17,8 +17,6 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-print(device)
-
 class ProteinSequenceDataset(Dataset):
     """Custom Dataset for loading and transforming protein sequences for sequence generation."""
     def __init__(self, sequences, seq_len=50):

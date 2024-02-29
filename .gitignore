@@ -162,3 +162,4 @@ cython_debug/
 # Ignore directories
 data/diamond db
 data/alpha fold results
+data/eggnog db
