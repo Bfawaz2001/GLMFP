@@ -10,10 +10,10 @@ import sys
 # File path to the models
 NGRAM_MODEL_PATH = "../../data/models/n-gram/"
 RNN_MODEL_PATH = '../../data/rnn/'
-RESULTS_PATH = "../../data/generated proteins/"
-DIAMOND_RESULTS_PATH = "../../data/diamond blastp results/"
+RESULTS_PATH = "../../results/generated proteins/"
+DIAMOND_RESULTS_PATH = "../../results/diamond blastp results/"
 DIAMOND_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
-INTERPRO_RESULTS_PATH = "../../data/interpro results/"
+INTERPRO_RESULTS_PATH = "../../results/interpro results/"
 ALPHA_FOLD_RESULTS_PATH = "../../data/alpha fold results/"
 IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
