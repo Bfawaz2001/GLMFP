@@ -10,11 +10,18 @@ import sys
 # File path to the models
 NGRAM_MODEL_PATH = "../../data/models/n-gram/"
 RNN_MODEL_PATH = '../../data/rnn/'
-RESULTS_PATH = "../../results/generated proteins/"
-DIAMOND_RESULTS_PATH = "../../results/diamond blastp results/"
-DIAMOND_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
+
+# File Paths to results directories
+GENERATED_PROTEINS_RESULTS_PATH = "../../results/generated proteins/"
 INTERPRO_RESULTS_PATH = "../../results/interpro results/"
 ALPHA_FOLD_RESULTS_PATH = "../../data/alpha fold results/"
+DIAMOND_RESULTS_PATH = "../../results/diamond blastp results/"
+
+# Diamond Database paths for DIAMOND BLASTp
+DIAMOND_NR_DB_PATH = "../../results/diamond"
+DIAMOND_SwissProt_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
+
+# InterProScan script path and user email address
 IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
 
@@ -149,7 +156,7 @@ def generate_protein(model, min_length, max_length, model_type):
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 
-def compare_against_ncbi_nr(fasta_file):
+def compare_against_ncbi_nr(fasta_file, diamond_db_path):
     """
     Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP and reports
     the percentage of matches.
@@ -157,9 +164,11 @@ def compare_against_ncbi_nr(fasta_file):
     Args:
         fasta_file (str): The name of the FASTA file selected for comparison.
 
+
     Enhancements include optimized DIAMOND BLASTP execution for large databases and more informative output regarding
     the percentage of sequence matches.
     """
+
     results_filename = input("Please enter the name of the generated proteins file: ").strip()
     if not results_filename:
         print("Invalid filename. Please provide a valid name.")
@@ -168,8 +177,8 @@ def compare_against_ncbi_nr(fasta_file):
 
     diamond_cmd = [
         'diamond', 'blastp',
-        '--db', DIAMOND_DB_PATH,
-        '--query', RESULTS_PATH+fasta_file,
+        '--db', diamond_db_path,
+        '--query', GENERATED_PROTEINS_RESULTS_PATH+fasta_file,
         '--out', output_file,
         '--outfmt', '6',
         '--max-target-seqs', '10',
@@ -212,7 +221,7 @@ def run_interpro_scan(selected_file, email):
         command = [
             'python', IPRSCAN5_PATH,
             '--email', email,
-            '--sequence', RESULTS_PATH+selected_file,
+            '--sequence', GENERATED_PROTEINS_RESULTS_PATH+selected_file,
             '--stype', 'p',
             '--outfile', output_file,  # Specify output file name
         ]
@@ -237,13 +246,40 @@ def generate_proteins_ngram_interface(model, model_type):
     min_length = int(input("Enter the minimum length of the amino acids: "))
     max_length = int(input("Enter the maximum length of the amino acids: "))
 
-    with open(RESULTS_PATH+output_filename, 'w') as file:
+    with open(GENERATED_PROTEINS_RESULTS_PATH+output_filename, 'w') as file:
         for i in range(num_proteins):
             protein = generate_protein(model, min_length, max_length, model_type)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
             file.write(f">Protein_{i + 1}\n{formatted_protein}\n")
 
     print(f"Generated proteins saved to {output_filename}")
+
+def diamond_blastp_menu(selected_file):
+    """
+    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for analysis.
+
+    The function supports comparing the selected file against the NCBI nr database,
+    labeling functionalities (InterProScan), and visualizing proteins (AlphaFold).
+    Future implementations can replace 'pass' with actual function calls.
+    """
+    print("\nDIAMOND BLASTp Menu")
+    print("1. Compare against NCBI nr (non-redundant proteins) database")
+    print("2. Compare against Reviewed SwissProt proteins database")
+    print("3. Go back to Main Menu")
+    option = input("Select an option for analysis: ")
+
+    if option == '1':
+        compare_against_ncbi_nr(selected_file, DIAMOND_NR_DB_PATH)
+    elif option == '2':
+        compare_against_ncbi_nr(selected_file, DIAMOND_SwissProt_DB_PATH)
+    elif option == "3":
+        print("\nGoing Back to main menu...")
+    else:
+        print("\nInvalid option. Returning to main menu.")
+        return
 
 def analyse_options(selected_file):
     """
@@ -257,15 +293,19 @@ def analyse_options(selected_file):
     Future implementations can replace 'pass' with actual function calls.
     """
     print("\nAnalysis Tool Selection Menu")
-    print("1. Compare against NCBI nr (non-redundant) database")
+    print("1. Compare against known protein sequences (DIAMOND BLASTp)")
     print("2. Label Protein Functionalities (InterProScan)")
+    print("3. Visualise Proteins (AlphaFold)")
     print("3. Go back to Main Menu")
     option = input("Select an option for analysis: ")
 
     if option == '1':
-        compare_against_ncbi_nr(selected_file)
+        diamond_blastp_menu(selected_file)
     elif option == '2':
         run_interpro_scan(selected_file, EMAIL)
+    elif option == "3":
+        print("\nNot implemented yet... Returning to Main Menu")
+        return
     elif option == "3":
         print("\nGoing Back to main menu...")
     else:
@@ -281,7 +321,7 @@ def analyse_proteins_menu():
     to analysis options.
     """
     try:
-        files = [f for f in os.listdir(RESULTS_PATH) if f.endswith('.fasta')]
+        files = [f for f in os.listdir(GENERATED_PROTEINS_RESULTS_PATH) if f.endswith('.fasta')]
         if not files:
             print("No FASTA files found in the generated proteins directory.")
             return
