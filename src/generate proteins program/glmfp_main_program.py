@@ -5,7 +5,12 @@ from collections import defaultdict
 import subprocess
 import os
 import pandas as pd
-import sys
+import json
+import csv
+from Bio.SeqUtils import molecular_weight, IsoelectricPoint
+from collections import Counter
+import matplotlib.pyplot as plt
+import math
 
 # File path to the models
 NGRAM_MODEL_PATH = "../../data/models/n-gram/"
@@ -14,20 +19,22 @@ RNN_MODEL_PATH = '../../data/rnn/'
 # File Paths to results directories
 GENERATED_PROTEINS_RESULTS_PATH = "../../results/generated proteins/"
 INTERPRO_RESULTS_PATH = "../../results/interpro results/"
-ALPHA_FOLD_RESULTS_PATH = "../../data/alpha fold results/"
+ANALYSIS_SUMMARY_PATH = "../../data/analysis summary/"
 DIAMOND_RESULTS_PATH = "../../results/diamond blastp results/"
 
 # Diamond Database paths for DIAMOND BLASTp
-DIAMOND_NR_DB_PATH = "../../results/diamond"
+DIAMOND_NR_DB_PATH = "../../data/diamond db/nr.dmnd"
 DIAMOND_SwissProt_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
 
 # InterProScan script path and user email address
 IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
 
+
 def defaultdict_int():
     """Returns a defaultdict with int as the default factory, replacing lambda."""
     return defaultdict(int)
+
 
 def parse_fasta(file_path):
     """Parses a FASTA file and yields sequence ID and sequence pairs."""
@@ -45,6 +52,77 @@ def parse_fasta(file_path):
                 sequence.append(line)
         if seq_id:  # Ensure the last sequence in the file is also yielded
             yield seq_id, ''.join(sequence)
+
+
+def calculate_amino_acid_composition(sequences):
+    """Calculate amino acid composition for a list of sequences."""
+    all_sequences_composition = Counter()
+    individual_compositions = []
+    for _, sequence in sequences:
+        composition = Counter(sequence)
+        all_sequences_composition += composition
+        individual_compositions.append(composition)
+    return all_sequences_composition, individual_compositions
+
+
+def plot_aa_composition(composition, title, save_path):
+    total = sum(composition.values())
+    percentages = {aa: (freq / total) * 100 for aa, freq in composition.items()}
+    labels, values = zip(*percentages.items())
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(labels, values, color='skyblue')
+    plt.xlabel('Amino Acid')
+    plt.ylabel('Percentage (%)')
+    plt.title(title)
+    plt.savefig(save_path)
+    plt.close()
+
+def calculate_shannon_entropy(sequence):
+    frequency = Counter(sequence)
+    entropy = -sum((freq / len(sequence)) * math.log2(freq / len(sequence)) for freq in frequency.values())
+    return entropy
+
+
+def calculate_physicochemical_properties(sequence):
+    mw = molecular_weight(sequence, seq_type='protein')
+    ip = IsoelectricPoint.IsoelectricPoint(sequence).pi()
+    return mw, ip
+
+
+def parse_interproscan_results(json_file):
+    with open(json_file) as f:
+        data = json.load(f)
+
+    summary = {}
+    for result in data['results']:
+        protein_id = result['sequence']['id']
+        annotations = []
+        for entry in result.get('entries', []):
+            for annotation in entry.get('goAnnotations', []):
+                annotations.append({
+                    'domain': entry['entry']['name'],
+                    'description': entry['entry']['description'],
+                    'GO': annotation['identifier']
+                })
+        summary[protein_id] = annotations
+    return summary
+
+
+def write_annotations_to_csv(summary, output_file):
+    with open(output_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Protein ID', 'Domain', 'Description', 'GO'])
+
+        for protein_id, annotations in summary.items():
+            for annotation in annotations:
+                writer.writerow([
+                    protein_id,
+                    annotation['domain'],
+                    annotation['description'],
+                    annotation['GO']
+                ])
+
 
 def load_model(filename):
     """
@@ -156,6 +234,26 @@ def generate_protein(model, min_length, max_length, model_type):
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 
+def generate_proteins_ngram_interface(model, model_type):
+    """
+    Interface for generating proteins using the selected model.
+    """
+    base_filename = input("\nEnter the name for the generated proteins file (without extension): ")
+    output_filename = "{}.fasta".format(base_filename)
+
+    num_proteins = int(input("Enter the number of proteins to be created: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
+
+    with open(GENERATED_PROTEINS_RESULTS_PATH+output_filename, 'w') as file:
+        for i in range(num_proteins):
+            protein = generate_protein(model, min_length, max_length, model_type)
+            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
+            file.write(">Protein_{}\n{}\n".format(i+1,formatted_protein))
+
+    print("Generated proteins saved to {}".format(output_filename))
+
+
 def compare_against_ncbi_nr(fasta_file, diamond_db_path):
     """
     Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP and reports
@@ -186,73 +284,75 @@ def compare_against_ncbi_nr(fasta_file, diamond_db_path):
     ]
 
     try:
-        print(f"\nRunning DIAMOND BLASTP against NCBI NR database for {fasta_file}...")
+        print("\nRunning DIAMOND BLASTP against NCBI NR database for {}...".format(fasta_file))
         start_time = time.time()
         subprocess.run(diamond_cmd, check=True)
         end_time = time.time()
-        print(f"\nAnalysis complete. Results are saved in {output_file}.")
-        print(f"Time taken: {start_time-end_time} seconds")
+        print("\nAnalysis complete. Results are saved in {}.".format(output_file))
+        print("Time taken: {} seconds".format(end_time-start_time))
 
         # Further code to parse the output file and calculate the percentage of matches
         df = pd.read_csv(output_file, sep='\t', header=None,
                          names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'sstart',
                                 'evalue', 'bitscore'])
         avg_pident = df['pident'].mean()
-        print(f"Average percentage of identity: {avg_pident}%")
+        print("Average percentage of identity: {}%".format(avg_pident))
 
     except subprocess.CalledProcessError as e:
         print("\nError during DIAMOND execution: ", e)
 
+
 def run_interpro_scan(selected_file, email):
-        """
-        Run InterProScan on a given FASTA file by invoking the iprscan5.py script with TSV output.
-
-        Parameters:
-        - fasta_file_path: Path to the FASTA file to be analyzed.
-        - email: Email address for job submission.
-        """
-        results_directory = INTERPRO_RESULTS_PATH + f"{selected_file.removesuffix('.fasta')}"
-
-        os.makedirs(results_directory, exist_ok=True)
-
-        output_file = results_directory + f'/{selected_file.removesuffix(".fasta")}'
-
-        # Basic command to run iprscan5.py with required arguments
-        command = [
-            'python', IPRSCAN5_PATH,
-            '--email', email,
-            '--sequence', GENERATED_PROTEINS_RESULTS_PATH+selected_file,
-            '--stype', 'p',
-            '--outfile', output_file,  # Specify output file name
-        ]
-
-        # Execute the command
-        start_time = time.time()
-        subprocess.run(command, capture_output=True, text=True)
-        end_time = time.time()
-
-        # Handle the output (e.g., print it, or process it further)
-        print(f"\nInterProScan results saved to {output_file}, "
-              f"and took {end_time - start_time:.2f} seconds.")
-
-def generate_proteins_ngram_interface(model, model_type):
     """
-    Interface for generating proteins using the selected model.
+    Run InterProScan on a given FASTA file by invoking the iprscan5.py script with JSON output.
+
+    Parameters:
+    - selected_file: Name of the FASTA file to be analyzed.
+    - email: Email address for job submission.
     """
-    base_filename = input("\nEnter the name for the generated proteins file (without extension): ")
-    output_filename = f"{base_filename}.fasta"
+    # Ensuring paths are absolute for reliability
+    fasta_file_path = os.path.join(GENERATED_PROTEINS_RESULTS_PATH, selected_file)
+    results_directory = os.path.join(INTERPRO_RESULTS_PATH, selected_file.removesuffix('.fasta'))
+    os.makedirs(results_directory, exist_ok=True)
+    output_file = os.path.join(results_directory, selected_file.removesuffix('.fasta'))
 
-    num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the amino acids: "))
-    max_length = int(input("Enter the maximum length of the amino acids: "))
+    # Basic command to run iprscan5.py with required arguments
+    command = [
+        'python', IPRSCAN5_PATH,
+        '--email', email,
+        '--sequence', fasta_file_path,
+        '--stype', 'p',
+        '--outfile', output_file,
+    ]
 
-    with open(GENERATED_PROTEINS_RESULTS_PATH+output_filename, 'w') as file:
-        for i in range(num_proteins):
-            protein = generate_protein(model, min_length, max_length, model_type)
-            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
-            file.write(f">Protein_{i + 1}\n{formatted_protein}\n")
+    # Execute the command
+    start_time = time.time()
+    result = subprocess.run(command, capture_output=True, text=True)
+    end_time = time.time()
 
-    print(f"Generated proteins saved to {output_filename}")
+    # Check if the subprocess executed successfully
+    if result.returncode != 0:
+        print("Error running InterProScan:")
+        print(result.stderr)
+        return
+
+    # Verify output file existence
+    if not os.path.exists(output_file):
+        print(f"Expected output file not found: {output_file}")
+        return
+
+    print(f"InterProScan results saved to {output_file}, "
+          f"and took {end_time - start_time:.2f} seconds.")
+
+    # Assuming parse_interproscan_results and write_annotations_to_csv are implemented correctly
+    try:
+        summary = parse_interproscan_results(output_file)
+        csv_output_file = os.path.join(results_directory, f"{selected_file.removesuffix('.fasta')}_summary.csv")
+        write_annotations_to_csv(summary, csv_output_file)
+        print(f"Annotations summary saved to {csv_output_file}")
+    except Exception as e:
+        print(f"An error occurred while parsing or writing the summary: {e}")
+
 
 def diamond_blastp_menu(selected_file):
     """
@@ -267,7 +367,7 @@ def diamond_blastp_menu(selected_file):
     """
     print("\nDIAMOND BLASTp Menu")
     print("1. Compare against NCBI nr (non-redundant proteins) database")
-    print("2. Compare against Reviewed SwissProt proteins database")
+    print("2. Compare against Reviewed SwissProt proteins (training data) database")
     print("3. Go back to Main Menu")
     option = input("Select an option for analysis: ")
 
@@ -281,7 +381,48 @@ def diamond_blastp_menu(selected_file):
         print("\nInvalid option. Returning to main menu.")
         return
 
-def analyse_options(selected_file):
+
+def summary_protein_sequences(selected_file):
+    sequences = list(parse_fasta(GENERATED_PROTEINS_RESULTS_PATH + selected_file))
+
+    # Create specific directories
+    results_directory = os.path.join(ANALYSIS_SUMMARY_PATH, selected_file.removesuffix('.fasta'))
+    graphs_directory = os.path.join(results_directory, "aa composition graphs/")
+    os.makedirs(results_directory, exist_ok=True)
+    os.makedirs(graphs_directory, exist_ok=True)
+
+    all_compositions = defaultdict(int)
+
+    # Prepare a single summary file instead of individual files for each sequence
+    summary_path = os.path.join(results_directory, f"{selected_file.removesuffix('.fasta')}_summary.txt")
+    with open(summary_path, 'w') as summary_file:
+        for i, (header, sequence) in enumerate(sequences, 1):
+            composition = Counter(sequence)
+            for aa, freq in composition.items():
+                all_compositions[aa] += freq
+            entropy = calculate_shannon_entropy(sequence)
+            mw, ip = calculate_physicochemical_properties(sequence)
+
+            # Write detailed summary to the single file
+            summary_file.write(
+                f"Protein {i}\n"
+                f"Shannon Entropy: {entropy:.4f}\n"
+                f"Molecular Weight: {mw:.2f}\n"
+                f"Isoelectric Point: {ip:.2f}\n\n")
+
+            # Plot and save AA composition graph
+            graph_path = os.path.join(graphs_directory, "protein_{}_composition.png".format(i))
+            plot_aa_composition(composition, 'Amino Acid Composition of Protein {}'.format(i), graph_path)
+
+    # Plot and save overall AA composition graph
+    total_graph_path = os.path.join(graphs_directory, "total_composition.png")
+    plot_aa_composition(all_compositions, 'Overall Amino Acid Composition', total_graph_path)
+
+    print("\nSummary file saved to {}".format(summary_path))
+    print("Amino Acid composition Graphs saved to {}.".format(graphs_directory))
+
+
+def analysis_options(selected_file):
     """
     Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
 
@@ -295,8 +436,9 @@ def analyse_options(selected_file):
     print("\nAnalysis Tool Selection Menu")
     print("1. Compare against known protein sequences (DIAMOND BLASTp)")
     print("2. Label Protein Functionalities (InterProScan)")
-    print("3. Visualise Proteins (AlphaFold)")
-    print("3. Go back to Main Menu")
+    print("3. Summary of proteins sequences (amino acid composition, shannon entropy, physiochemistry)")
+    print("4. Re-select protein FASTA file")
+    print("4. Go back to Main Menu")
     option = input("Select an option for analysis: ")
 
     if option == '1':
@@ -304,13 +446,17 @@ def analyse_options(selected_file):
     elif option == '2':
         run_interpro_scan(selected_file, EMAIL)
     elif option == "3":
-        print("\nNot implemented yet... Returning to Main Menu")
-        return
-    elif option == "3":
+        summary_protein_sequences(selected_file)
+    elif option == "4":
+        analyse_proteins_menu()
+    elif option == "5":
         print("\nGoing Back to main menu...")
     else:
         print("\nInvalid option. Returning to main menu.")
         return
+
+    analysis_options(selected_file)
+
 
 def analyse_proteins_menu():
     """
@@ -328,7 +474,7 @@ def analyse_proteins_menu():
 
         print("\nSelect a FASTA file to analyse:")
         for i, file in enumerate(files, 1):
-            print(f"{i}. {file}")
+            print("{}. {}".format(i,file))
 
         file_selection = int(input("Enter the number of the file: ")) - 1
 
@@ -338,10 +484,11 @@ def analyse_proteins_menu():
             return
 
         selected_file = files[file_selection]
-        analyse_options(selected_file)
+        analysis_options(selected_file)
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print("An error occurred: {}".format(e))
+
 
 def ngram_model_menu():
     """
@@ -377,6 +524,7 @@ def ngram_model_menu():
     model = load_model(filename)
     generate_proteins_ngram_interface(model, model_type)
 
+
 def rnn_model_menu():
     pass
 
@@ -402,6 +550,7 @@ def model_menu():
         print("Invalid choice. Returning to main menu.")
         return
 
+
 def main_menu():
     """
     Display the main menu and handle user input for program navigation.
@@ -426,6 +575,7 @@ def main_menu():
             break
         else:
             print("Invalid choice. Please enter 1, 2, or 3.")
+
 
 if __name__ == "__main__":
     main_menu()

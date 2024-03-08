@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import sys
-sys.path.append('../generate proteins program/glmfp_main_program.py')
+sys.path.append('../src/generate proteins program/glmfp_main_program.py')
 
 
 
