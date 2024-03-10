@@ -1,4 +1,6 @@
 import gc
+import pickle
+
 import torch
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -10,14 +12,12 @@ from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 
 # Setup device: Uses Metal if available (for Mac), otherwise defaults to CPU
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-elif torch.cuda.is_available():
+if torch.cuda.is_available():
     device = torch.device("cuda")
+    print("Using GPU:", torch.cuda.get_device_name(0))
 else:
     device = torch.device("cpu")
-
-print(device)
+    print("Using CPU")
 
 
 class ProteinSequenceDataset(Dataset):
@@ -70,7 +70,7 @@ class LSTMProteinGenerator(nn.Module):
         return out
 
 
-def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path):
+def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
 
@@ -94,14 +94,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             # Memory management
             del inputs, targets, outputs, loss
             gc.collect()
-            if device == torch.device("mps"):
-                torch.mps.empty_cache()
-            if device == torch.device("gpu"):
-                torch.gpu.empty_cache()
-            if device == torch.device("cuda"):
-                torch.cuda.empty_cache()
-
-
 
         val_loss = 0.0
         model.eval()
@@ -131,32 +123,44 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             best_val_loss = val_loss_avg
             torch.save(model.state_dict(), model_path)
 
+            # Save the LabelEncoder
+            encoder_path = "rnn_label_encoder.pkl"  # Specify the desired path for saving
+            with open(encoder_path, 'wb') as f:
+                pickle.dump(label_encoder, f)
+            print(f"LabelEncoder saved to {encoder_path}.")
+
     print(f"Training completed. Best model saved to {model_path}.")
+
 
 def main(fasta_file, model_path):
     """Main function to run the training process."""
     sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
-    encoded_seqs, _ = encode_sequences(sequences)
+    encoded_seqs, label_encoder_classes = encode_sequences(sequences)
+    label_encoder = LabelEncoder()
+    label_encoder.classes_ = label_encoder_classes
+    # Now pass label_encoder to train function
+
     vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.2, random_state=42)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=42)
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=16, shuffle=True, collate_fn=pad_collate,
+    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate,
                               pin_memory=True, num_workers=4)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=16, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=4)
 
     model = LSTMProteinGenerator(vocab_size, embedding_dim=32, hidden_dim=64, num_layers=2).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     criterion = nn.CrossEntropyLoss()
 
-    train(model, train_loader, val_loader, optimizer, criterion, epochs=10, model_path=model_path)
+    train(model, train_loader, val_loader, optimizer, criterion, epochs=10, model_path=model_path,
+          label_encoder=label_encoder)
 
 
 if __name__ == "__main__":
     fasta_file = "../../../data/training data/uniprot_sprot.fasta"  # Update the path as necessary
-    model_path = "../../../models/lstm_protein_generator.pt"  # Update the path as necessary
+    model_path = "../../../models/rnn_lstm_pytorch.pt"  # Update the path as necessary
     main(fasta_file, model_path)
