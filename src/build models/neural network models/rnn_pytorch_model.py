@@ -41,7 +41,7 @@ def encode_sequences(sequences):
     """Encode protein sequences into numerical format using Label Encoding."""
     label_encoder = LabelEncoder()
     # Include all standard amino acids, plus some special characters for padding, etc.
-    label_encoder.fit(list("ACDEFGHIKLMNPQRSTVWYXZBJUO"))
+    label_encoder.fit(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
     encoded_seqs = [torch.tensor(label_encoder.transform(list(seq))) for seq in sequences]
     return encoded_seqs, label_encoder.classes_
 
@@ -115,8 +115,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         scheduler.step(val_loss_avg)
 
         # Print training/validation statistics
-        print(
-            f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, Validation Loss: {val_loss_avg}')
+        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
+              f'Validation Loss: {val_loss_avg}')
 
         # Save the model if validation loss has improved
         if val_loss_avg < best_val_loss:
@@ -124,7 +124,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             torch.save(model.state_dict(), model_path)
 
             # Save the LabelEncoder
-            encoder_path = "rnn_label_encoder.pkl"  # Specify the desired path for saving
+            encoder_path = "nn_label_encoder.pkl"  # Specify the desired path for saving
             with open(encoder_path, 'wb') as f:
                 pickle.dump(label_encoder, f)
             print(f"LabelEncoder saved to {encoder_path}.")
@@ -142,18 +142,18 @@ def main(fasta_file, model_path):
 
     vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=42)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=101)
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate,
+    train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True, collate_fn=pad_collate,
                               pin_memory=True, num_workers=4)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=4)
 
-    model = LSTMProteinGenerator(vocab_size, embedding_dim=32, hidden_dim=64, num_layers=2).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=4).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
     train(model, train_loader, val_loader, optimizer, criterion, epochs=10, model_path=model_path,
@@ -161,6 +161,6 @@ def main(fasta_file, model_path):
 
 
 if __name__ == "__main__":
-    fasta_file = "../../../data/training data/uniprot_sprot.fasta"  # Update the path as necessary
-    model_path = "../../../models/rnn_lstm_pytorch.pt"  # Update the path as necessary
+    fasta_file = "uniprot_sprot.fasta"  # Update the path as necessary
+    model_path = "nn_pytorch.pt"  # Update the path as necessary
     main(fasta_file, model_path)

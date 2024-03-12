@@ -1,4 +1,3 @@
-import pickle
 import random
 import time
 from collections import defaultdict
@@ -7,7 +6,6 @@ import os
 import pandas as pd
 import json
 import csv
-
 import torch
 import torch.nn as nn
 import pickle
@@ -87,7 +85,7 @@ def calculate_amino_acid_composition(sequences):
 def plot_aa_composition(composition, title, save_path):
     """Plot amino acid composition in alphabetical order with percentages."""
     # Ensure all 20 amino acids are represented in the plot, even if they are not in the composition
-    all_aas = 'ACDEFGHIKLMNPQRSTVWY'
+    all_aas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     composition_full = {aa: composition.get(aa, 0) for aa in all_aas}
 
     labels, values = zip(*sorted(composition_full.items()))  # Sort by amino acid
@@ -106,10 +104,16 @@ def calculate_shannon_entropy(sequence):
     entropy = -sum((freq / len(sequence)) * math.log2(freq / len(sequence)) for freq in frequency.values())
     return entropy
 
+def clean_sequence(sequence):
+    """Remove 'X' in the protein sequence."""
+    cleaned_sequence = sequence.replace('X', '')
+    return cleaned_sequence
+
 
 def calculate_physicochemical_properties(sequence):
-    mw = molecular_weight(sequence, seq_type='protein')
-    ip = IsoelectricPoint.IsoelectricPoint(sequence).pi()
+    cleaned_sequence = clean_sequence(sequence)  # Clean the sequence first
+    mw = molecular_weight(cleaned_sequence, seq_type='protein')
+    ip = IsoelectricPoint.IsoelectricPoint(cleaned_sequence).pi()
     return mw, ip
 
 
@@ -163,7 +167,7 @@ def load_ngram_model(filename):
 
 
 def load_nn_model_and_encoder(model_path, encoder_path):
-    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=32, hidden_dim=64, num_layers=2)
+    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=64, hidden_dim=128, num_layers=4)
     model.load_state_dict(torch.load(model_path))
     model.eval()
     model.to("cpu")
@@ -280,6 +284,22 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
             else:
                 break  # If no valid continuation is found
 
+    elif model_type == '10mer':
+        start_9mers = list(model['start_9mer_probs'].keys())
+        start_9mer_probs = list(model['start_9mer_probs'].values())
+        start_9mer = random.choices(start_9mers, weights=start_9mer_probs)[0]
+        protein.extend(list(start_9mer))
+        current_5mer = start_9mer
+
+        while len(protein) < length:
+            next_aa_options = model['model'].get(current_5mer, {})
+            if next_aa_options:
+                next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
+                protein.append(next_aa)
+                current_5mer = ''.join(protein[-9:])
+            else:
+                break  # If no valid continuation is found
+
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 
@@ -327,51 +347,58 @@ def generate_proteins_ngram_interface(model, model_type):
     print("Generated proteins saved to {}".format(output_filename))
 
 
+def add_headers_to_diamond_output(output_file, headers):
+    # Define your headers as a list of column names. For example:
+    # headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore"]
+
+    # Read the TSV file without headers
+    df = pd.read_csv(output_file, sep='\t', header=None)
+
+    # Assign the headers to the dataframe
+    df.columns = headers
+
+    # Write the dataframe back to the file with headers
+    df.to_csv(output_file, sep='\t', index=False)
+
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
     """
-    Compares a selected FASTA file against the NCBI nr (non-redundant) database using DIAMOND BLASTP and reports
-    the percentage of matches.
+    This function utilizes DIAMOND BLASTP to compare a selected FASTA file against a specified protein database
+    and reports the percentage of identity matches. It is designed to handle both 'nr' and 'swissprot' databases.
 
     Args:
-        fasta_file (str): The name of the FASTA file selected for comparison.
-        diamond_db_path (str): the path to the corresponding DIAMOND database chosen by the user nr or swissprot
-        database (str): the name of teh database used for comparison
-
-
-    Enhancements include optimized DIAMOND BLASTP execution for large databases and more informative output regarding
-    the percentage of sequence matches.
+        fasta_file (str): The FASTA file for comparison.
+        diamond_db_path (str): Path to the DIAMOND database.
+        database (str): The database name ('nr' or 'swissprot') for contextual output.
     """
-
-    results_filename = database + '_' + fasta_file.removesuffix('.fasta') + "_diamond_blastp"
-    output_file = DIAMOND_RESULTS_PATH + results_filename  # Ensure correct output path
+    results_filename = f"{database}_{fasta_file.removesuffix('.fasta')}_diamond_blastp.tsv"
+    output_file = f"{DIAMOND_RESULTS_PATH}{results_filename}"
 
     diamond_cmd = [
         'diamond', 'blastp',
         '--db', diamond_db_path,
-        '--query', GENERATED_PROTEINS_RESULTS_PATH + fasta_file,
+        '--query', f"{GENERATED_PROTEINS_RESULTS_PATH}{fasta_file}",
         '--out', output_file,
         '--outfmt', '6',
-        '--max-target-seqs', '10',
-        '--evalue', '0.001',
+        '--max-target-seqs', '1',
+        '--evalue', '1e-3'
     ]
 
     try:
-        print("\nRunning DIAMOND BLASTP against NCBI NR database for {}...".format(fasta_file))
-        start_time = time.time()
+        print(f"\nRunning DIAMOND BLASTP against the {database.upper()} database for {fasta_file}...")
         subprocess.run(diamond_cmd, check=True)
-        end_time = time.time()
-        print("\nAnalysis complete. Results are saved in {}.".format(output_file))
-        print("Time taken: {} seconds".format(end_time - start_time))
+        print(f"\nAnalysis complete. Results are saved in {output_file}.")
 
-        # Further code to parse the output file and calculate the percentage of matches
-        df = pd.read_csv(output_file, sep='\t', header=None,
-                         names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'sstart',
-                                'evalue', 'bitscore'])
-        avg_pident = df['pident'].mean()
-        print("Average percentage of identity: {}%".format(avg_pident))
+        headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
+                   "evalue",
+                   "bitscore"]
+        add_headers_to_diamond_output(output_file, headers)
 
+        # Process and report results
+        df = pd.read_csv(output_file, sep='\t')
+        avg_identity = df['pident'].mean()
+        print(f"Average identity: {avg_identity:.2f}%")
     except subprocess.CalledProcessError as e:
-        print("\nError during DIAMOND execution: ", e)
+        print("Error during DIAMOND BLASTP execution: ", e)
 
 
 def run_interpro_scan(selected_file, email):
@@ -574,7 +601,8 @@ def ngram_model_menu():
     print("2. 3-mer")
     print("3. 5-mer")
     print("4. 6-mer")
-    print("5. Back to Main Menu")
+    print("5. 10-mer")
+    print("6. Back to Main Menu")
     choice = input("Enter your choice: ")
 
     if choice == '1':
@@ -590,6 +618,9 @@ def ngram_model_menu():
         model_type = '6mer'
         filename = NGRAM_MODEL_PATH + '6mer_model.pkl'
     elif choice == '5':
+        model_type = '10mer'
+        filename = NGRAM_MODEL_PATH + '10mer_model.pkl'
+    elif choice == '6':
         print("\nGoing back to Main Menu...")
         return
     else:
@@ -608,8 +639,8 @@ def rnn_model_menu():
 
     if choice == '1':
         model_type = 'nn_lstm_pytorch'
-        model_path = RNN_MODEL_PATH + 'rnn_lstm_pytorch.pt'
-        encoder_path = RNN_MODEL_PATH + 'rnn_label_encoder.pkl'
+        model_path = RNN_MODEL_PATH + 'nn_pytorch.pt'
+        encoder_path = RNN_MODEL_PATH + 'nn_label_encoder.pkl'
     elif choice == '2':
         print("\nGoing back to Main Menu...")
         return

@@ -1,54 +1,59 @@
-from Bio import SeqIO
 import time
 import matplotlib.pyplot as plt
+from collections import defaultdict
+import json
 
 
-def generate_ngrams(sequence, n):
-    ngrams = [sequence[i:i + n] for i in range(len(sequence) - n + 1)]
-    return ngrams
+def generate_dummy_sequences(num_sequences=100000, sequence_length=250):
+    """Generate dummy sequences for demonstration purposes."""
+    import random
+    sequences = []
+    for _ in range(num_sequences):
+        sequence = ''.join(random.choices('ACDEFGHIKLMNPQRSTVWY', k=sequence_length))
+        sequences.append(sequence)
+    return sequences
 
 
-def calculate_probabilities(ngrams):
-    total_ngrams = len(ngrams)
-    probabilities = {}
-    for ngram in set(ngrams):
-        probabilities[ngram] = ngrams.count(ngram) / total_ngrams
-    return probabilities
+def build_ngram_model(sequences, n):
+    """Builds an n-gram model from the given sequences and calculates probabilities."""
+    ngram_counts = defaultdict(int)
+    total_ngrams = 0
+
+    # Count each n-gram occurrence
+    for sequence in sequences:
+        for i in range(len(sequence) - n + 1):
+            ngram = sequence[i:i + n]
+            ngram_counts[ngram] += 1
+            total_ngrams += 1
+
+    # Calculate probabilities
+    ngram_probabilities = {ngram: count / total_ngrams for ngram, count in ngram_counts.items()}
+
+    # Save probabilities to file
+    with open(f'ngram_probabilities_{n}.json', 'w') as file:
+        json.dump(ngram_probabilities, file, indent=4)
+
+    return ngram_counts  # Return counts if needed for further processing
 
 
-def main(fasta_file):
-    sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
-
+def main():
+    sequences = generate_dummy_sequences()
+    ns = range(2, 31)  # From 2-mer to 30-mer
     times = []
-    ns = range(2, 31)
 
     for n in ns:
         start_time = time.time()
-
-        # Generate n-grams and calculate probabilities for each sequence
-        for sequence in sequences:
-            ngrams = generate_ngrams(sequence, n)
-            probabilities = calculate_probabilities(ngrams)
-
+        build_ngram_model(sequences, n)
         end_time = time.time()
         times.append(end_time - start_time)
-        print(f"Time to generate and calculate probabilities for {n}-mers: {end_time - start_time} seconds")
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(ns, times, marker='o', linestyle='-', color='b')
-    plt.title("Scaling of n-gram Model Creation Time")
-    plt.xlabel("n-gram")
-    plt.ylabel("Time (seconds)")
-    plt.xticks(ns)
+    plt.plot(ns, times, marker='o')
+    plt.title('Time to Build N-gram Models (2-mer to 30-mer)')
+    plt.xlabel('N-mer')
+    plt.ylabel('Time (seconds)')
     plt.grid(True)
-
-    # Save the figure
-    plt.savefig("/ngram_scaling_graph.png", dpi=300)  # Saves the figure to a file
-    plt.close()  # Close the plot to prevent it from displaying in the notebook
-
-    print("The scaling graph has been saved to ngram_scaling_graph.png")
+    plt.show()
 
 
 if __name__ == "__main__":
-    fasta_file = "../../results/generated proteins/3mer_test2.fasta"  # Change this to the path of your FASTA file
-    main(fasta_file)
+    main()
