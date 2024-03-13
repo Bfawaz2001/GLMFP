@@ -138,7 +138,6 @@ def main(fasta_file, model_path):
     encoded_seqs, label_encoder_classes = encode_sequences(sequences)
     label_encoder = LabelEncoder()
     label_encoder.classes_ = label_encoder_classes
-    # Now pass label_encoder to train function
 
     vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
 

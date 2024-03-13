@@ -85,7 +85,7 @@ def calculate_amino_acid_composition(sequences):
 def plot_aa_composition(composition, title, save_path):
     """Plot amino acid composition in alphabetical order with percentages."""
     # Ensure all 20 amino acids are represented in the plot, even if they are not in the composition
-    all_aas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    all_aas = 'ABCDEFGHIKLMNOPQRSTUVWXYZ'
     composition_full = {aa: composition.get(aa, 0) for aa in all_aas}
 
     labels, values = zip(*sorted(composition_full.items()))  # Sort by amino acid
@@ -178,7 +178,7 @@ def load_nn_model_and_encoder(model_path, encoder_path):
     return model, label_encoder
 
 
-def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1):
+def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
     start_seq = 'M'
     device = next(model.parameters()).device
     sequence = [label_encoder.transform([start_seq])[0]]
@@ -349,8 +349,6 @@ def generate_proteins_ngram_interface(model, model_type):
 
 def add_headers_to_diamond_output(output_file, headers):
     # Define your headers as a list of column names. For example:
-    # headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore"]
-
     # Read the TSV file without headers
     df = pd.read_csv(output_file, sep='\t', header=None)
 
@@ -360,15 +358,36 @@ def add_headers_to_diamond_output(output_file, headers):
     # Write the dataframe back to the file with headers
     df.to_csv(output_file, sep='\t', index=False)
 
+
+def count_fasta_sequences(fasta_file):
+    """Count the number of sequences in a FASTA file."""
+    with open(fasta_file, 'r') as file:
+        return sum(1 for line in file if line.startswith('>'))
+
+
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
     """
-    This function utilizes DIAMOND BLASTP to compare a selected FASTA file against a specified protein database
-    and reports the percentage of identity matches. It is designed to handle both 'nr' and 'swissprot' databases.
+    Executes a DIAMOND BLASTP search for a given FASTA file against a specified protein database and reports on the results.
+
+    This function runs the DIAMOND BLASTP tool to compare protein sequences contained within a FASTA file against a pre-built
+    DIAMOND database (either 'nr' or 'swissprot'). It generates an output file containing the search results, checks for
+    the presence of matches, and calculates the average identity percentage of those matches. If no matches are found, it
+    notifies the user that no file was created or that the file is empty.
 
     Args:
-        fasta_file (str): The FASTA file for comparison.
-        diamond_db_path (str): Path to the DIAMOND database.
-        database (str): The database name ('nr' or 'swissprot') for contextual output.
+        fasta_file (str): Path to the FASTA file containing protein sequences for comparison.
+        diamond_db_path (str): Path to the pre-built DIAMOND database to be used for the search.
+        database (str): Name of the database ('nr' or 'swissprot') against which the search is performed, used for
+                        reporting purposes.
+
+    Returns:
+        None: This function does not return any value. It prints out the status of the operation, including the number
+              of matched proteins and the average identity percentage if matches are found, or a message indicating no
+              matches were found.
+
+    Raises:
+        subprocess.CalledProcessError: If the DIAMOND BLASTP command fails during execution, this error is raised with
+                                        details about the failure.
     """
     results_filename = f"{database}_{fasta_file.removesuffix('.fasta')}_diamond_blastp.tsv"
     output_file = f"{DIAMOND_RESULTS_PATH}{results_filename}"
@@ -386,16 +405,24 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
     try:
         print(f"\nRunning DIAMOND BLASTP against the {database.upper()} database for {fasta_file}...")
         subprocess.run(diamond_cmd, check=True)
+
+        # Check if output file is empty or does not exist
+        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+            print(f"\nNo matches found. No file created or the file is empty for {fasta_file}.")
+            return  # Exit the function as there's nothing further to do
+
         print(f"\nAnalysis complete. Results are saved in {output_file}.")
 
         headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
-                   "evalue",
-                   "bitscore"]
+                   "evalue", "bitscore"]
         add_headers_to_diamond_output(output_file, headers)
 
         # Process and report results
         df = pd.read_csv(output_file, sep='\t')
+        matched_proteins = df['qseqid'].nunique()
         avg_identity = df['pident'].mean()
+
+        print(f"Matched proteins: {matched_proteins}")
         print(f"Average identity: {avg_identity:.2f}%")
     except subprocess.CalledProcessError as e:
         print("Error during DIAMOND BLASTP execution: ", e)
@@ -485,42 +512,52 @@ def diamond_blastp_menu(selected_file):
 
 def summary_protein_sequences(selected_file):
     sequences = list(parse_fasta(GENERATED_PROTEINS_RESULTS_PATH + selected_file))
-
-    # Create specific directories
     results_directory = os.path.join(ANALYSIS_SUMMARY_PATH, selected_file.removesuffix('.fasta'))
-    graphs_directory = os.path.join(results_directory, "aa composition graphs/")
+    graphs_directory = os.path.join(results_directory, "aa_composition_graphs/")
     os.makedirs(results_directory, exist_ok=True)
     os.makedirs(graphs_directory, exist_ok=True)
 
-    all_compositions = defaultdict(int)
+    total_compositions = Counter()
 
-    # Prepare a single summary file instead of individual files for each sequence
     summary_path = os.path.join(results_directory, f"{selected_file.removesuffix('.fasta')}_summary.txt")
     with open(summary_path, 'w') as summary_file:
         for i, (header, sequence) in enumerate(sequences, 1):
             composition = Counter(sequence)
-            for aa, freq in composition.items():
-                all_compositions[aa] += freq
+            total_compositions += composition  # Update total composition
+
+            # Calculate percentages for the current protein
+            total_aa_count = sum(composition.values())
+            percentage_composition = {aa: (count / total_aa_count) * 100 for aa, count in composition.items()}
+
+            # Write details to summary file
+            summary_file.write(f"Protein {i}\n")
+            summary_file.write("Amino Acid Counts and Frequencies:\n")
+            for aa, count in composition.items():
+                frequency = percentage_composition[aa]
+                summary_file.write(f"  {aa}: Count = {count}, Frequency = {frequency:.2f}%\n")
+
             entropy = calculate_shannon_entropy(sequence)
             mw, ip = calculate_physicochemical_properties(sequence)
 
-            # Write detailed summary to the single file
-            summary_file.write(
-                f"Protein {i}\n"
-                f"Shannon Entropy: {entropy:.4f}\n"
-                f"Molecular Weight: {mw:.2f}\n"
-                f"Isoelectric Point: {ip:.2f}\n\n")
+            summary_file.write(f"Shannon Entropy: {entropy:.4f}\n")
+            summary_file.write(f"Molecular Weight: {mw:.2f}\n")
+            summary_file.write(f"Isoelectric Point: {ip:.2f}\n\n")
 
-            # Plot and save AA composition graph
-            graph_path = os.path.join(graphs_directory, "protein_{}_composition.png".format(i))
-            plot_aa_composition(composition, 'Amino Acid Composition of Protein {}'.format(i), graph_path)
+            # Plot and save individual protein composition graph
+            individual_graph_path = os.path.join(graphs_directory, f"protein_{i}_composition.png")
+            plot_aa_composition(percentage_composition, f'Protein {i} Amino Acid Composition', individual_graph_path)
 
-    # Plot and save overall AA composition graph
-    total_graph_path = os.path.join(graphs_directory, "total_composition.png")
-    plot_aa_composition(all_compositions, 'Overall Amino Acid Composition', total_graph_path)
+        # Calculate overall composition percentages for total graph
+        total_aa_count = sum(total_compositions.values())
+        overall_percentage_composition = {aa: (count / total_aa_count) * 100 for aa, count in
+                                          total_compositions.items()}
 
-    print("\nSummary file saved to {}".format(summary_path))
-    print("Amino Acid composition Graphs saved to {}.".format(graphs_directory))
+        # Plot and save total composition graph
+        total_graph_path = os.path.join(graphs_directory, "total_composition.png")
+        plot_aa_composition(overall_percentage_composition, 'Overall Amino Acid Composition', total_graph_path)
+
+        print("\nSummary file saved to {}".format(summary_path))
+        print("Amino Acid composition graphs saved to {}.".format(graphs_directory))
 
 
 def analysis_options(selected_file):
