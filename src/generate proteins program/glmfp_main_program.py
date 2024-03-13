@@ -389,13 +389,13 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
         subprocess.CalledProcessError: If the DIAMOND BLASTP command fails during execution, this error is raised with
                                         details about the failure.
     """
-    results_filename = f"{database}_{fasta_file.removesuffix('.fasta')}_diamond_blastp.tsv"
-    output_file = f"{DIAMOND_RESULTS_PATH}{results_filename}"
+    results_filename = "{}_{}_diamond_blastp.tsv".format(database, fasta_file.removesuffix('.fasta'))
+    output_file = DIAMOND_RESULTS_PATH+results_filename
 
     diamond_cmd = [
         'diamond', 'blastp',
         '--db', diamond_db_path,
-        '--query', f"{GENERATED_PROTEINS_RESULTS_PATH}{fasta_file}",
+        '--query', GENERATED_PROTEINS_RESULTS_PATH+fasta_file,
         '--out', output_file,
         '--outfmt', '6',
         '--max-target-seqs', '1',
@@ -403,15 +403,15 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
     ]
 
     try:
-        print(f"\nRunning DIAMOND BLASTP against the {database.upper()} database for {fasta_file}...")
+        print("\nRunning DIAMOND BLASTP against the {} database for {}...".format(database.upper(),fasta_file))
         subprocess.run(diamond_cmd, check=True)
 
         # Check if output file is empty or does not exist
         if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
-            print(f"\nNo matches found. No file created or the file is empty for {fasta_file}.")
+            print("\nNo matches found. No file created or the file is empty for {}.".format(fasta_file))
             return  # Exit the function as there's nothing further to do
 
-        print(f"\nAnalysis complete. Results are saved in {output_file}.")
+        print("\nAnalysis complete. Results are saved in {}.".format(output_file))
 
         headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
                    "evalue", "bitscore"]
@@ -422,8 +422,8 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
         matched_proteins = df['qseqid'].nunique()
         avg_identity = df['pident'].mean()
 
-        print(f"Matched proteins: {matched_proteins}")
-        print(f"Average identity: {avg_identity:.2f}%")
+        print("Matched proteins: {}".format(matched_proteins))
+        print("Average identity: {:.2f}%".format(avg_identity))
     except subprocess.CalledProcessError as e:
         print("Error during DIAMOND BLASTP execution: ", e)
 
@@ -464,16 +464,16 @@ def run_interpro_scan(selected_file, email):
 
     # Verify output file existence
     if not os.path.exists(output_file):
-        print(f"Expected output file not found: {output_file}")
+        print("Expected output file not found: {}".format(output_file))
         return
 
-    print(f"InterProScan results saved to {output_file}, "
-          f"and took {end_time - start_time:.2f} seconds.")
+    print("InterProScan results saved to {}, ".format(output_file),
+          "and took {:.2f} seconds.".format(end_time - start_time))
 
     # Assuming parse_interproscan_results and write_annotations_to_csv are implemented correctly
     try:
         summary = parse_interproscan_results(output_file)
-        csv_output_file = os.path.join(results_directory, f"{selected_file.removesuffix('.fasta')}_summary.csv")
+        csv_output_file = os.path.join(results_directory, "{}_summary.csv".format(selected_file.removesuffix('.fasta')))
         write_annotations_to_csv(summary, csv_output_file)
         print("Annotations summary saved to {}".format(csv_output_file))
     except Exception as e:
@@ -519,7 +519,7 @@ def summary_protein_sequences(selected_file):
 
     total_compositions = Counter()
 
-    summary_path = os.path.join(results_directory, f"{selected_file.removesuffix('.fasta')}_summary.txt")
+    summary_path = os.path.join(results_directory, "{}_summary.txt".format(selected_file.removesuffix('.fasta')))
     with open(summary_path, 'w') as summary_file:
         for i, (header, sequence) in enumerate(sequences, 1):
             composition = Counter(sequence)
@@ -530,22 +530,22 @@ def summary_protein_sequences(selected_file):
             percentage_composition = {aa: (count / total_aa_count) * 100 for aa, count in composition.items()}
 
             # Write details to summary file
-            summary_file.write(f"Protein {i}\n")
+            summary_file.write("Protein {}\n".format(i))
             summary_file.write("Amino Acid Counts and Frequencies:\n")
             for aa, count in composition.items():
                 frequency = percentage_composition[aa]
-                summary_file.write(f"  {aa}: Count = {count}, Frequency = {frequency:.2f}%\n")
+                summary_file.write("  {}: Count = {}, Frequency = {:.2f}%\n".format(aa,count,frequency))
 
             entropy = calculate_shannon_entropy(sequence)
             mw, ip = calculate_physicochemical_properties(sequence)
 
-            summary_file.write(f"Shannon Entropy: {entropy:.4f}\n")
-            summary_file.write(f"Molecular Weight: {mw:.2f}\n")
-            summary_file.write(f"Isoelectric Point: {ip:.2f}\n\n")
+            summary_file.write("Shannon Entropy: {:.4f}\n".format(entropy))
+            summary_file.write("Molecular Weight: {:.2f}\n".format(mw))
+            summary_file.write("Isoelectric Point: {:.2f}\n\n".format(ip))
 
             # Plot and save individual protein composition graph
-            individual_graph_path = os.path.join(graphs_directory, f"protein_{i}_composition.png")
-            plot_aa_composition(percentage_composition, f'Protein {i} Amino Acid Composition', individual_graph_path)
+            individual_graph_path = os.path.join(graphs_directory, "protein_{}_composition.png".format(i))
+            plot_aa_composition(percentage_composition, 'Protein {} Amino Acid Composition'.format(i), individual_graph_path)
 
         # Calculate overall composition percentages for total graph
         total_aa_count = sum(total_compositions.values())

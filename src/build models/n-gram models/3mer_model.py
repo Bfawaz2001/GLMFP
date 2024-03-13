@@ -72,7 +72,8 @@ def main():
 
     save_model(trigram_model, start_2mer_counts, start_2mer_probs, output_filename)
 
-    print(f"Model saved to {output_filename}. Took {end_time - start_time:.2f} seconds.")
+    print("Model saved to {}. Took {:.2f} seconds.".format(output_filename,end_time - start_time))
+
 
 if __name__ == "__main__":
     main()

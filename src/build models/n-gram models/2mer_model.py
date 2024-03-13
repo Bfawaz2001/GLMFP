@@ -4,6 +4,7 @@ import time
 from collections import defaultdict, Counter
 from Bio import SeqIO
 
+
 def build_bigram_model(fasta_file):
     """
     Builds a bigram model from a FASTA file containing protein sequences.
@@ -34,6 +35,7 @@ def build_bigram_model(fasta_file):
 
     return bigram_model, start_amino_acid_counts, start_amino_acid_probs
 
+
 def save_model(model, start_amino_acid_counts, start_amino_acid_probs, filename):
     """
     Saves the bigram model, starting amino acid counts, and their probabilities to a file.
@@ -47,6 +49,7 @@ def save_model(model, start_amino_acid_counts, start_amino_acid_probs, filename)
     with open(filename, 'wb') as file:
         pickle.dump(model_data, file)
 
+
 def main():
     """
     Main function to build and save the bigram model from protein sequences.
@@ -55,7 +58,7 @@ def main():
     output_filename = "../../../data/models/n-gram/2mer_model.pkl"
 
     if not os.path.exists(fasta_file):
-        print(f"Error: The file {fasta_file} does not exist.")
+        print("Error: The file {} does not exist.".format(fasta_file))
         return
 
     start_time = time.time()
@@ -64,7 +67,8 @@ def main():
 
     save_model(bigram_model, start_amino_acid_counts, start_amino_acid_probs, output_filename)
 
-    print(f"Model saved to {output_filename}. Took {end_time - start_time:.2f} seconds.")
+    print("Model saved to {}. Took {:.2f} seconds.".format(output_filename, end_time - start_time))
+
 
 if __name__ == "__main__":
     main()

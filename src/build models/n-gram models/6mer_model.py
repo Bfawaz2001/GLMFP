@@ -3,9 +3,11 @@ from collections import defaultdict, Counter
 from Bio import SeqIO
 import time
 
+
 def defaultdict_int():
     """Function to return a defaultdict with int as the default factory."""
     return defaultdict(int)
+
 
 def build_6mer_model(fasta_file):
     """
@@ -42,6 +44,7 @@ def build_6mer_model(fasta_file):
 
     return model, start_5mer_probs
 
+
 def save_model(model, start_5mer_probs, filename):
     """
     Saves the 6-mer model and start 5-mer probabilities to a file.
@@ -53,6 +56,7 @@ def save_model(model, start_5mer_probs, filename):
     """
     with open(filename, 'wb') as f:
         pickle.dump({'model': model, 'start_5mer_probs': start_5mer_probs}, f)
+
 
 def main():
     """
@@ -66,7 +70,8 @@ def main():
     end_time = time.time()
 
     save_model(model, start_5mer_probs, output_filename)
-    print(f"Model saved to {output_filename}. Took {end_time - start_time:.2f} seconds.")
+    print("Model saved to {}. Took {:.2f} seconds.".format(output_filename, end_time - start_time))
+
 
 if __name__ == "__main__":
     main()

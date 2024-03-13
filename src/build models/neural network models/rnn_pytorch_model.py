@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 
-# Setup device: Uses Metal if available (for Mac), otherwise defaults to CPU
+# Setup device: use Cuda for GPU acceleration otherwise use the CPU
 if torch.cuda.is_available():
     device = torch.device("cuda")
     print("Using GPU:", torch.cuda.get_device_name(0))
@@ -115,8 +115,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         scheduler.step(val_loss_avg)
 
         # Print training/validation statistics
-        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
-              f'Validation Loss: {val_loss_avg}')
+        print('Epoch {}/{}, Training Loss: {}, '.format(epoch + 1, epochs, train_loss / len(train_loader)),
+              'Validation Loss: {}'.format(val_loss_avg))
 
         # Save the model if validation loss has improved
         if val_loss_avg < best_val_loss:
@@ -127,9 +127,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             encoder_path = "nn_label_encoder.pkl"  # Specify the desired path for saving
             with open(encoder_path, 'wb') as f:
                 pickle.dump(label_encoder, f)
-            print(f"LabelEncoder saved to {encoder_path}.")
+            print("LabelEncoder saved to {}.".format(encoder_path))
 
-    print(f"Training completed. Best model saved to {model_path}.")
+    print("Training completed. Best model saved to {}.".format(model_path))
 
 
 def main(fasta_file, model_path):
