@@ -367,12 +367,13 @@ def count_fasta_sequences(fasta_file):
 
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
     """
-    Executes a DIAMOND BLASTP search for a given FASTA file against a specified protein database and reports on the results.
+    Executes a DIAMOND BLASTP search for a given FASTA file against a specified protein database
+    and reports on the results.
 
-    This function runs the DIAMOND BLASTP tool to compare protein sequences contained within a FASTA file against a pre-built
-    DIAMOND database (either 'nr' or 'swissprot'). It generates an output file containing the search results, checks for
-    the presence of matches, and calculates the average identity percentage of those matches. If no matches are found, it
-    notifies the user that no file was created or that the file is empty.
+    This function runs the DIAMOND BLASTP tool to compare protein sequences contained within a FASTA file against a
+    pre-built DIAMOND database (either 'nr' or 'swissprot'). It generates an output file containing the search results,
+    checks for the presence of matches, and calculates the average identity percentage of those matches. If no matches
+    are found, it notifies the user that no file was created or that the file is empty.
 
     Args:
         fasta_file (str): Path to the FASTA file containing protein sequences for comparison.
@@ -545,7 +546,8 @@ def summary_protein_sequences(selected_file):
 
             # Plot and save individual protein composition graph
             individual_graph_path = os.path.join(graphs_directory, "protein_{}_composition.png".format(i))
-            plot_aa_composition(percentage_composition, 'Protein {} Amino Acid Composition'.format(i), individual_graph_path)
+            plot_aa_composition(percentage_composition, 'Protein {} Amino Acid Composition'.format(i),
+                                individual_graph_path)
 
         # Calculate overall composition percentages for total graph
         total_aa_count = sum(total_compositions.values())
