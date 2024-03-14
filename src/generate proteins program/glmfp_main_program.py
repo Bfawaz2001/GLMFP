@@ -104,6 +104,7 @@ def calculate_shannon_entropy(sequence):
     entropy = -sum((freq / len(sequence)) * math.log2(freq / len(sequence)) for freq in frequency.values())
     return entropy
 
+
 def clean_sequence(sequence):
     """Remove 'X' in the protein sequence."""
     cleaned_sequence = sequence.replace('X', '')
@@ -449,8 +450,11 @@ def run_interpro_scan(selected_file, email):
         '--email', email,
         '--sequence', fasta_file_path,
         '--stype', 'p',
+        '--outformat', 'json',
         '--outfile', output_file,
     ]
+
+    output_file = output_file+'.json.json'
 
     # Execute the command
     start_time = time.time()
@@ -553,6 +557,12 @@ def summary_protein_sequences(selected_file):
         total_aa_count = sum(total_compositions.values())
         overall_percentage_composition = {aa: (count / total_aa_count) * 100 for aa, count in
                                           total_compositions.items()}
+
+        # Write overall statistics to the summary file
+        summary_file.write("\nOverall Amino Acid Counts and Frequencies:\n")
+        for aa, count in total_compositions.items():
+            frequency = overall_percentage_composition[aa]
+            summary_file.write(f"  {aa}: Count = {count}, Frequency = {frequency:.2f}%\n")
 
         # Plot and save total composition graph
         total_graph_path = os.path.join(graphs_directory, "total_composition.png")

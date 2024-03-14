@@ -45,8 +45,8 @@ try:
 except ImportError:
     import urlparse
     from urllib import urlencode
-    from urllib3 import urlopen, Request, HTTPError
-    from urllib3 import __version__ as urllib_version
+    from urllib import urlopen, Request, HTTPError
+    from urllib import __version__ as urllib_version
 
 
 # Debug print
@@ -93,7 +93,7 @@ def restRequest(url):
                 and contenttype != u"image/jpeg;charset=UTF-8"
                 and contenttype != u"application/gzip;charset=UTF-8"):
             try:
-                result = str(resp.decode('utf-8'))
+                result = str(resp, u'utf-8')
             except UnicodeDecodeError:
                 result = resp
         else:
@@ -115,6 +115,7 @@ def serviceGetParameters():
     doc = xmltramp.parse(xmlDoc)
     printDebugMessage(u'serviceGetParameters', u'End', 1)
     return doc[u'id':]
+
 
 # Get list of parameters for error handling
 def getListOfParameters():
@@ -191,6 +192,8 @@ def serviceRun(email, title, params):
     printDebugMessage(u'serviceRun', u'jobId: ' + jobId, 2)
     printDebugMessage(u'serviceRun', u'End', 1)
     return jobId
+
+
 def multipleServiceRun(email, title, params, useSeqId, maxJobs, outputLevel):
     seqs = params['sequence']
     seqs = seqs.split(">")[1:]
@@ -224,7 +227,6 @@ def multipleServiceRun(email, title, params, useSeqId, maxJobs, outputLevel):
         i += maxJobs
         j += maxJobs
         time.sleep(pollFreq)
-
 
 
 # Get job status
@@ -476,19 +478,20 @@ numOpts = len(sys.argv)
 parser = OptionParser(add_help_option=False)
 
 # Tool specific options (Try to print all the commands automatically)
-parser.add_option('--goterms', action='store_true', help='Switch on look-up of corresponding Gene Ontology annotations')
-parser.add_option('--pathways', action='store_true', help='Switch on look-up of corresponding pathway annotations')
+parser.add_option('--goterms', action='store_true',
+                  help=('Switch on look-up of corresponding Gene Ontology annotations'))
+parser.add_option('--pathways', action='store_true', help=('Switch on look-up of corresponding pathway annotations'))
 parser.add_option('--stype', type=str, help=('Indicates if the sequences to align are protein or nucleotide'
-                  '(DNA/RNA).'))
+                                             '(DNA/RNA).'))
 parser.add_option('--appl', type=str, help=('A number of different protein sequence applications are launched.'
-                  'These applications search against specific databases and have'
-                  'preconfigured cut off thresholds.'))
+                                            'These applications search against specific databases and have'
+                                            'preconfigured cut off thresholds.'))
 parser.add_option('--sequence', type=str, help=('Your protein sequence can be entered directly into this form in GCG,'
-                  'FASTA, EMBL, PIR, NBRF or UniProtKB/Swiss-Prot format. A partially'
-                  'formatted sequence is not accepted. Adding a return to the end of the'
-                  'sequence may help certain applications understand the input. Note that'
-                  'directly using data from word processors may yield unpredictable'
-                  'results as hidden/control characters may be present.'))
+                                                'FASTA, EMBL, PIR, NBRF or UniProtKB/Swiss-Prot format. A partially'
+                                                'formatted sequence is not accepted. Adding a return to the end of the'
+                                                'sequence may help certain applications understand the input. Note that'
+                                                'directly using data from word processors may yield unpredictable'
+                                                'results as hidden/control characters may be present.'))
 # General options
 parser.add_option('-h', '--help', action='store_true', help='Show this help message and exit.')
 parser.add_option('--email', help='E-mail address.')
@@ -554,7 +557,7 @@ elif options.params:
 # Get parameter details
 elif options.paramDetail:
     printGetParameterDetails(options.paramDetail)
-# Print Client version
+#  Print Client version
 elif options.version:
     print("Revision: %s" % version)
     sys.exit()
@@ -573,7 +576,8 @@ elif options.email and not options.jobid:
         else:  # Argument is a sequence id
             params[u'asequence'] = args[0]
             params[u'bsequence'] = args[0]
-    elif hasattr(options, "sequence") or (hasattr(options, "asequence") and hasattr(options, "bsequence")):  # Specified via option
+    elif hasattr(options, "sequence") or (
+            hasattr(options, "asequence") and hasattr(options, "bsequence")):  # Specified via option
         if hasattr(options, "sequence"):
             if os.path.exists(options.sequence):  # Read file into content
                 params[u'sequence'] = readFile(options.sequence)
@@ -595,18 +599,14 @@ elif options.email and not options.jobid:
         params['goterms'] = 'true'
     if options.goterms:
         params['goterms'] = options.goterms
-    
 
     if not options.pathways:
         params['pathways'] = 'true'
     if options.pathways:
         params['pathways'] = options.pathways
-    
 
     if options.appl:
         params['appl'] = options.appl
-    
-
 
     # Submit the job
     if options.multifasta:
@@ -620,7 +620,7 @@ elif options.email and not options.jobid:
             print("Warning: --maxJobs option ignored.")
 
         jobId = serviceRun(options.email, options.title, params)
-        if options.asyncjob: # Async mode
+        if options.asyncjob:  # Async mode
             print(jobId)
             if outputLevel > 0:
                 print("To check status: python %s --status --jobid %s"
