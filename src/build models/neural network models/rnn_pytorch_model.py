@@ -1,8 +1,8 @@
 import gc
 import pickle
-
 import torch
 from torch.nn.utils import clip_grad_norm_
+from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
@@ -41,7 +41,7 @@ def encode_sequences(sequences):
     """Encode protein sequences into numerical format using Label Encoding."""
     label_encoder = LabelEncoder()
     # Include all standard amino acids, plus some special characters for padding, etc.
-    label_encoder.fit(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+    label_encoder.fit(list("ABCDEFGHIKLMNOPQRSTUVWXYZ"))
     encoded_seqs = [torch.tensor(label_encoder.transform(list(seq))) for seq in sequences]
     return encoded_seqs, label_encoder.classes_
 
@@ -74,60 +74,74 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
 
+    # Initialize gradient scaler for mixed precision
+    scaler = GradScaler()
+
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
+
         for batch in train_loader:
             inputs, targets = batch
             inputs, targets = inputs.to(device), targets.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs.transpose(1, 2), targets)
-            loss.backward()
 
-            # Clip gradients to avoid exploding gradient issue
+            optimizer.zero_grad()
+
+            # Runs the forward pass with mixed precision
+            with autocast():
+                outputs = model(inputs)
+                loss = criterion(outputs.transpose(1, 2), targets)
+
+            # Scales the loss, and calls backward() to create scaled gradients
+            scaler.scale(loss).backward()
+
+            # Unscales the gradients of optimizer's assigned params in-place
+            scaler.unscale_(optimizer)
+
+            # Since the gradients of optimizer's assigned params are unscaled, clips as usual
             clip_grad_norm_(model.parameters(), max_norm=1)
 
-            optimizer.step()
+            # Optimizer step and updates the scale for next iteration
+            scaler.step(optimizer)
+            scaler.update()
+
             train_loss += loss.item()
 
-            # Memory management
             del inputs, targets, outputs, loss
             gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
+        # Validation loop (consider wrapping the validation forward pass in autocast if using mixed precision)
         val_loss = 0.0
         model.eval()
         with torch.no_grad():
             for batch in val_loader:
                 inputs, targets = batch
                 inputs, targets = inputs.to(device), targets.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs.transpose(1, 2), targets)
+                with autocast():
+                    outputs = model(inputs)
+                    loss = criterion(outputs.transpose(1, 2), targets)
                 val_loss += loss.item()
 
-                # Memory management
                 del inputs, targets, outputs, loss
                 gc.collect()
-                if device == torch.device("mps"):
-                    torch.mps.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         val_loss_avg = val_loss / len(val_loader)
         scheduler.step(val_loss_avg)
 
-        # Print training/validation statistics
-        print('Epoch {}/{}, Training Loss: {}, '.format(epoch + 1, epochs, train_loss / len(train_loader)),
-              'Validation Loss: {}'.format(val_loss_avg))
+        print('Epoch {}/{}, Training Loss: {}, Validation Loss: {}'.format(epoch + 1, epochs,
+                                                                           train_loss / len(train_loader),
+                                                                           val_loss_avg))
 
-        # Save the model if validation loss has improved
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
             torch.save(model.state_dict(), model_path)
-
-            # Save the LabelEncoder
-            encoder_path = "nn_label_encoder.pkl"  # Specify the desired path for saving
-            with open(encoder_path, 'wb') as f:
+            with open("nn_label_encoder.pkl", 'wb') as f:
                 pickle.dump(label_encoder, f)
-            print("LabelEncoder saved to {}.".format(encoder_path))
+            print("Model and LabelEncoder saved.")
 
     print("Training completed. Best model saved to {}.".format(model_path))
 
@@ -141,17 +155,17 @@ def main(fasta_file, model_path):
 
     vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=101)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.25, random_state=101)
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True, collate_fn=pad_collate,
+    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate,
                               pin_memory=True, num_workers=4)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=4)
 
-    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=4).to(device)
+    model = LSTMProteinGenerator(vocab_size, embedding_dim=32, hidden_dim=64, num_layers=2).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
