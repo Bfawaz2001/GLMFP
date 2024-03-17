@@ -1,11 +1,11 @@
 import random
+import textwrap
 import time
 from collections import defaultdict
 import subprocess
 import os
 import pandas as pd
 import json
-import csv
 import torch
 import torch.nn as nn
 import pickle
@@ -118,39 +118,90 @@ def calculate_physicochemical_properties(sequence):
     return mw, ip
 
 
-def parse_interproscan_results(json_file):
-    with open(json_file) as f:
-        data = json.load(f)
+def parse_interproscan_results(data):
+    """
+    Parses the JSON output from InterProScan to extract detailed annotations for each protein.
+    Includes the protein ID, signature descriptions, accessions, GO terms, and pathway information.
 
+    Args:
+    - data (dict): The JSON-decoded data from an InterProScan results file.
+
+    Returns:
+    - summary (dict): A dictionary summarizing the annotations for each protein.
+    """
     summary = {}
-    for result in data['results']:
-        protein_id = result['sequence']['id']
-        annotations = []
-        for entry in result.get('entries', []):
-            for annotation in entry.get('goAnnotations', []):
-                annotations.append({
-                    'domain': entry['entry']['name'],
-                    'description': entry['entry']['description'],
-                    'GO': annotation['identifier']
-                })
-        summary[protein_id] = annotations
+    if 'results' in data:
+        for result in data['results']:
+            xrefs = result.get('xref', [])
+            if not xrefs:
+                continue
+            protein_id = xrefs[0].get('id', "Unknown Protein ID")
+            # Assuming 'sequence' is available at the 'result' level
+            protein_sequence = result.get('sequence', '')
+
+            annotations = []
+            matches = result.get('matches', [])
+            for match in matches:
+                signature = match.get('signature', {})
+                signature_description = signature.get('description', 'No description available')
+                signature_accession = signature.get('accession', 'N/A')
+
+                entry = signature.get('entry', {}) or {}
+                go_terms = [{'id': go.get('id'), 'name': go.get('name'), 'database': go.get('db'),
+                             'category': go.get('category')} for go in entry.get('goXRefs', [])]
+
+                pathways = [{'name': pathway.get('name'), 'id': pathway.get('id'),
+                             'database': pathway.get('databaseName')} for pathway in entry.get('pathwayXRefs', [])]
+
+                match_details = []
+                for location in match.get('locations', []):
+                    start = location.get('start') - 1  # Assuming 0-based indexing for Python string slicing
+                    end = location.get('end')
+                    sequence_match = protein_sequence[start:end]  # Extract matched sequence slice
+                    match_details.append({'start': start + 1, 'end': end, 'score': location.get('score', 'N/A'),
+                                          'evalue': location.get('evalue', 'N/A'), 'sequence_match': sequence_match})
+
+                annotations.append({'signature_accession': signature_accession, 'description': signature_description,
+                                    'GO_terms': go_terms, 'pathways': pathways, 'match_details': match_details})
+
+            summary[protein_id] = annotations
     return summary
 
-
-def write_annotations_to_csv(summary, output_file):
-    with open(output_file, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Protein ID', 'Domain', 'Description', 'GO'])
-
+def write_annotations_to_text(summary, output_file):
+    with open(output_file, 'w') as file:
         for protein_id, annotations in summary.items():
-            for annotation in annotations:
-                writer.writerow([
-                    protein_id,
-                    annotation['domain'],
-                    annotation['description'],
-                    annotation['GO']
-                ])
+            file.write(f"Protein ID: {protein_id}\n")
+            if not annotations:  # If there are no annotations for this protein
+                file.write("  No matches found.\n\n")
+                continue  # Skip to the next protein
 
+            for annotation in annotations:
+                # Ensuring values are not None before writing
+                signature_accession = annotation['signature_accession'] or "N/A"
+                description = annotation['description'] or "No description available"
+                file.write(f"  Signature Accession: {signature_accession}\n")
+                file.write(f"  Description: {textwrap.fill(description, width=120, subsequent_indent='    ')}\n")
+
+                if annotation['GO_terms']:
+                    go_terms_str = ", ".join(
+                        [f"{go.get('name', 'N/A')} ({go.get('id', 'N/A')})" for go in annotation['GO_terms']])
+                    file.write(f"  GO Terms: {textwrap.fill(go_terms_str, width=120, subsequent_indent='    ')}\n")
+
+                if annotation['pathways']:
+                    pathways_str = ", ".join(
+                        [f"{pathway.get('name', 'N/A')} ({pathway.get('id', 'N/A')})" for pathway in
+                         annotation['pathways']])
+                    file.write(f"  Pathways: {textwrap.fill(pathways_str, width=120, subsequent_indent='    ')}\n")
+
+                if annotation['match_details']:
+                    match_details_str = "; ".join([f"Start: {md.get('start', 'N/A')}, End: {md.get('end', 'N/A')}, "
+                                                   f"Score: {md.get('score', 'N/A')}, Evalue: {md.get('evalue', 'N/A')}, "
+                                                   f"Matched Sequence: {md.get('sequence_match', 'N/A')}"
+                                                   for md in annotation['match_details']])
+                    file.write(
+                        f"  Match Details: {textwrap.fill(match_details_str, width=120, subsequent_indent='    ')}\n")
+
+                file.write("\n")
 
 def load_ngram_model(filename):
     """
@@ -168,15 +219,18 @@ def load_ngram_model(filename):
 
 
 def load_nn_model_and_encoder(model_path, encoder_path):
-    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=64, hidden_dim=128, num_layers=4)
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
-    model.to("cpu")
+    # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
+    model = LSTMProteinGenerator(vocab_size=26, embedding_dim=64, hidden_dim=128, num_layers=4)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval()  # Set the model to evaluation mode
+    model.to("cpu")  # Ensure the model is fully on the CPU
 
+    # Load the encoder as before
     with open(encoder_path, 'rb') as file:
         label_encoder = pickle.load(file)
 
     return model, label_encoder
+
 
 
 def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
@@ -454,12 +508,22 @@ def run_interpro_scan(selected_file, email):
         '--outfile', output_file,
     ]
 
-    output_file = output_file+'.json.json'
-
     # Execute the command
     start_time = time.time()
     result = subprocess.run(command, capture_output=True, text=True)
     end_time = time.time()
+
+    output_file = output_file + '.json.json'
+
+    # Check if the file with the extra .json extension exists
+    if os.path.exists(output_file):
+        # Construct the correct output filename by removing one .json extension
+        correct_output_file = output_file.removesuffix('.json')
+
+        # Rename the file to remove the extra .json extension
+        os.rename(output_file, correct_output_file)
+        # Reassign the output_file to thr correct name to be used to create the summary file
+        output_file = correct_output_file
 
     # Check if the subprocess executed successfully
     if result.returncode != 0:
@@ -477,9 +541,11 @@ def run_interpro_scan(selected_file, email):
 
     # Assuming parse_interproscan_results and write_annotations_to_csv are implemented correctly
     try:
-        summary = parse_interproscan_results(output_file)
-        csv_output_file = os.path.join(results_directory, "{}_summary.csv".format(selected_file.removesuffix('.fasta')))
-        write_annotations_to_csv(summary, csv_output_file)
+        with open(output_file) as json_file:
+            data = json.load(json_file)
+        summary = parse_interproscan_results(data)
+        csv_output_file = os.path.join(results_directory, "{}_summary.txt".format(selected_file.removesuffix('.fasta')))
+        write_annotations_to_text(summary, csv_output_file)
         print("Annotations summary saved to {}".format(csv_output_file))
     except Exception as e:
         print("An error occurred while parsing or writing the summary: {}".format(e))

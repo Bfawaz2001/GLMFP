@@ -73,69 +73,84 @@ class LSTMProteinGenerator(nn.Module):
 def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
-
-    # Initialize gradient scaler for mixed precision
     scaler = GradScaler()
+
+    # Define the number of steps for gradient accumulation
+    accumulation_steps = 4
+    accumulation_counter = 0  # Counter to keep track of accumulation steps
 
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
 
-        for batch in train_loader:
-            inputs, targets = batch
+        # Reset optimizer gradients at the start of each epoch
+        optimizer.zero_grad()
+
+        for batch_idx, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(device), targets.to(device)
 
-            optimizer.zero_grad()
-
-            # Runs the forward pass with mixed precision
+            # Autocast context for mixed precision
             with autocast():
                 outputs = model(inputs)
-                loss = criterion(outputs.transpose(1, 2), targets)
+                loss = criterion(outputs.transpose(1, 2), targets) / accumulation_steps
 
-            # Scales the loss, and calls backward() to create scaled gradients
+            # Backward pass
             scaler.scale(loss).backward()
+            train_loss += loss.item() * accumulation_steps  # Scale loss back
 
-            # Unscales the gradients of optimizer's assigned params in-place
-            scaler.unscale_(optimizer)
+            accumulation_counter += 1
 
-            # Since the gradients of optimizer's assigned params are unscaled, clips as usual
-            clip_grad_norm_(model.parameters(), max_norm=1)
+            # Perform model update steps if accumulation counter has reached the defined steps
+            if accumulation_counter % accumulation_steps == 0 or batch_idx == len(train_loader) - 1:
+                # Adjust gradients if necessary (gradient clipping, etc.)
+                scaler.unscale_(optimizer)
+                clip_grad_norm_(model.parameters(), max_norm=1)
 
-            # Optimizer step and updates the scale for next iteration
-            scaler.step(optimizer)
-            scaler.update()
+                # Optimizer step
+                scaler.step(optimizer)
+                scaler.update()
 
-            train_loss += loss.item()
+                # Zero gradients
+                optimizer.zero_grad()
 
+                # Reset accumulation counter after model update
+                accumulation_counter = 0
+
+            # Memory cleanup after each batch
             del inputs, targets, outputs, loss
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        # Validation loop (consider wrapping the validation forward pass in autocast if using mixed precision)
+        # Validation phase
         val_loss = 0.0
         model.eval()
         with torch.no_grad():
-            for batch in val_loader:
-                inputs, targets = batch
+            for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
+
                 with autocast():
                     outputs = model(inputs)
                     loss = criterion(outputs.transpose(1, 2), targets)
+
                 val_loss += loss.item()
 
+                # Memory cleanup in validation phase
                 del inputs, targets, outputs, loss
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
         val_loss_avg = val_loss / len(val_loader)
+
+        # Step scheduler
         scheduler.step(val_loss_avg)
 
-        print('Epoch {}/{}, Training Loss: {}, Validation Loss: {}'.format(epoch + 1, epochs,
-                                                                           train_loss / len(train_loader),
-                                                                           val_loss_avg))
+        # Logging
+        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
+              f'Validation Loss: {val_loss_avg}')
 
+        # Model checkpointing
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
             torch.save(model.state_dict(), model_path)
@@ -143,7 +158,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
                 pickle.dump(label_encoder, f)
             print("Model and LabelEncoder saved.")
 
-    print("Training completed. Best model saved to {}.".format(model_path))
+    print(f"Training completed. Best model saved to {model_path}.")
 
 
 def main(fasta_file, model_path):
@@ -151,9 +166,7 @@ def main(fasta_file, model_path):
     sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
     encoded_seqs, label_encoder_classes = encode_sequences(sequences)
     label_encoder = LabelEncoder()
-    label_encoder.classes_ = label_encoder_classes
-
-    vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBJUO")) + 1
+    vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBUO")) + 1
 
     train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.25, random_state=101)
     print("Building model...")
@@ -161,11 +174,11 @@ def main(fasta_file, model_path):
     val_dataset = ProteinSequenceDataset(val_seqs)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate,
-                              pin_memory=True, num_workers=4)
+                              pin_memory=True, num_workers=1)
     val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
-                            num_workers=4)
+                            num_workers=1)
 
-    model = LSTMProteinGenerator(vocab_size, embedding_dim=32, hidden_dim=64, num_layers=2).to(device)
+    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=6).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
