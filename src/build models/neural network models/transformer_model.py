@@ -2,16 +2,16 @@ import gc
 import math
 import pickle
 import torch
-from torch import optim
+from torch import optim, nn
 from torch.nn.utils import clip_grad_norm_
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
 from Bio import SeqIO
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 # Setup device: use CUDA for GPU acceleration if available, otherwise use the CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,45 +50,61 @@ def pad_collate(batch):
     return input_seqs_padded, target_seqs_padded
 
 
-class TransformerProteinGenerator(nn.Module):
-    """Transformer model for protein sequence generation with dynamic positional encoding."""
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
 
-    def __init__(self, vocab_size, d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6,
-                 dim_feedforward=2048):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        self.transformer = nn.Transformer(d_model, nhead, num_encoder_layers, num_decoder_layers, dim_feedforward,
-                                          dropout=0.1)
-        self.fc_out = nn.Linear(d_model, vocab_size)
-        self.d_model = d_model
-
-    def forward(self, src, tgt):
-        seq_len, N = src.size(1), src.size(0)
-
-        # Generate dynamic positional encoding
-        pos_encoder = self.positional_encoding(seq_len, N, self.d_model).to(src.device)
-
-        src = self.embedding(src) * math.sqrt(self.d_model) + pos_encoder
-        tgt = self.embedding(tgt) * math.sqrt(self.d_model) + pos_encoder
-
-        output = self.transformer(src, tgt)
-        return self.fc_out(output)
-
-    def positional_encoding(self, seq_len, batch_size, d_model):
-        """Generates dynamic positional encodings."""
-        pe = torch.zeros(seq_len, batch_size, d_model)
-        position = torch.arange(0, seq_len, dtype=torch.float).unsqueeze(1)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, :, 0::2] = torch.sin(position * div_term)
-        pe[:, :, 1::2] = torch.cos(position * div_term)
-        return pe.permute(1, 0, 2)
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)  # Shape [sequence length, 1, embedding size] for correct broadcasting
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x expected to be of shape [sequence length, batch size, embedding size]
+        x = x + self.pe[:x.size(0), :]  # Corrected indexing for dynamic sequence lengths
+        return self.dropout(x)
+
+
+class TransformerProteinGenerator(nn.Module):
+    """Transformer model for protein sequence generation."""
+    def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=6, dropout=0.1):
+        super(TransformerProteinGenerator, self).__init__()
+        self.model_type = 'Transformer'
+        self.src_mask = None
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
+        self.encoder = nn.Embedding(vocab_size, d_model)
+        self.d_model = d_model
+        self.decoder = nn.Linear(d_model, vocab_size)
+
+        self.init_weights()
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src):
+        src = self.encoder(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src)
+        output = self.decoder(output)
+        return output
 
 
 def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
-    """Training loop for the Transformer model."""
+    """Training loop for the Transformer model with gradient accumulation and gradient clipping."""
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
     scaler = GradScaler()
+    accumulation_steps = 4  # Define how many steps to accumulate gradients over
+    max_grad_norm = 1.0  # Define maximum gradient norm for clipping
 
     for epoch in range(epochs):
         model.train()
@@ -99,40 +115,37 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             inputs, targets = inputs.to(device), targets.to(device)
 
             with autocast():
-                outputs = model(inputs, inputs)
-                loss = criterion(outputs.transpose(1, 2), targets)
+                outputs = model(inputs)
+                loss = criterion(outputs.transpose(1, 2), targets) / accumulation_steps  # Scale loss
 
-            scaler.scale(loss).backward()
-            train_loss += loss.item()
+            scaler.scale(loss).backward()  # Accumulate gradients
+            train_loss += loss.item() * accumulation_steps  # Undo the scaling for logging purposes
 
-            scaler.unscale_(optimizer)
-            clip_grad_norm_(model.parameters(), max_norm=1)
+            # Perform parameter update every accumulation_steps
+            if (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
+                # Gradient clipping
+                scaler.unscale_(optimizer)  # Unscales the gradients of optimizer's assigned params in-place
+                clip_grad_norm_(model.parameters(), max_grad_norm)
 
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
 
+            # Optional: Clear memory to prevent OOM
             del inputs, targets, outputs, loss
             gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
+        # Validation loop remains unchanged
         val_loss = 0.0
         model.eval()
         with torch.no_grad():
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
-
                 with autocast():
-                    outputs = model(inputs, inputs)
+                    outputs = model(inputs)
                     loss = criterion(outputs.transpose(1, 2), targets)
-
                 val_loss += loss.item()
-
-                del inputs, targets, outputs, loss
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
 
         val_loss_avg = val_loss / len(val_loader)
         scheduler.step(val_loss_avg)
@@ -157,23 +170,22 @@ def main(fasta_file, model_path):
     label_encoder = LabelEncoder()
     vocab_size = len(label_encoder_classes) + 1  # Plus one for padding
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.25, random_state=101)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=10)
 
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate, pin_memory=True,
-                              num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
-                            num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=pad_collate, pin_memory=True,
+                              num_workers=1)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+                            num_workers=1)
 
     model = TransformerProteinGenerator(vocab_size).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
     criterion = nn.CrossEntropyLoss()
 
     train(model, train_loader, val_loader, optimizer, criterion, epochs=50, model_path=model_path,
           label_encoder=label_encoder)
-
 
 if __name__ == "__main__":
     fasta_file = "uniprot_sprot.fasta"  # Update path as necessary

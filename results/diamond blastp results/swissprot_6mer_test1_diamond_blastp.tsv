@@ -1,3 +1,0 @@
-qseqid	sseqid	pident	length	mismatch	gapopen	qstart	qend	sstart	send	evalue	bitscore
-Protein_3	sp|Q31HA7|DNAK_HYDCU	33.1	145	84	5	18	157	467	603	0.000144	47.0
-Protein_17	sp|P41290|CYB_PHYMC	72.7	33	7	1	225	255	111	143	8.22e-05	48.5

@@ -4,7 +4,6 @@ import time
 from collections import defaultdict
 import subprocess
 import os
-import pandas as pd
 import json
 import torch
 import torch.nn as nn
@@ -14,6 +13,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import math
 import torch.nn.functional as F
+import xml.etree.ElementTree as ET
 
 # File path to the models
 NGRAM_MODEL_PATH = "../../data/models/n-gram/"
@@ -167,6 +167,63 @@ def parse_interproscan_results(data):
             summary[protein_id] = annotations
     return summary
 
+
+def parse_diamond_xml(xml_file_path, summary_output_path):
+    """
+    Parse DIAMOND BLASTp XML output, calculate the match percentage for each hit,
+    and write a formatted summary to a text file with a maximum of 120 characters per line.
+    Additionally, print the total number of hits found. Now also includes gaps, query and hit sequences,
+    alignment coverage, and bit score.
+
+    Args:
+        xml_file_path (str): Path to the DIAMOND BLASTp XML output file.
+        summary_output_path (str): Path to the output text file where the summary will be written.
+    """
+    # Parse the XML file
+    tree = ET.parse(xml_file_path)
+    root = tree.getroot()
+
+    total_hits = 0  # Initialize total hits counter
+
+    with open(summary_output_path, 'w') as summary_file:
+        for iteration in root.findall('.//Iteration'):
+            query_id = iteration.find('Iteration_query-def').text
+            hits = iteration.findall('.//Hit')
+            num_hits = len(hits)
+            total_hits += num_hits  # Update total hits counter
+
+            summary_file.write(f"Query ID: {query_id}\n")
+            summary_file.write(f"Number of hits: {num_hits}\n\n")
+
+            for hit in hits:
+                hit_id = hit.find('Hit_id').text
+                hit_def = hit.find('Hit_def').text
+                hit_accession = hit.find('Hit_accession').text
+                hsp = hit.find('.//Hsp')
+                hsp_bit_score = hsp.find('Hsp_bit-score').text
+                hsp_evalue = hsp.find('Hsp_evalue').text
+                hsp_score = hsp.find('Hsp_score').text
+                hsp_identity = int(hsp.find('Hsp_identity').text)
+                hsp_align_len = int(hsp.find('Hsp_align-len').text)
+                hsp_gaps = hsp.find('Hsp_gaps').text
+                hsp_qseq = hsp.find('Hsp_qseq').text
+                hsp_hseq = hsp.find('Hsp_hseq').text
+                match_percentage = (hsp_identity / hsp_align_len) * 100 if hsp_align_len > 0 else 0
+                coverage = (hsp_align_len / int(iteration.find('Iteration_query-len').text)) * 100
+
+                # Writing using textwrap to ensure each line does not exceed 120 characters
+                hit_info = (f"  Hit ID: {hit_id}, Hit Def: {hit_def}, Accession: {hit_accession}, "
+                            f"E-value: {hsp_evalue}, Score: {hsp_score}, Bit Score: {hsp_bit_score}, "
+                            f"Identity: {hsp_identity}/{hsp_align_len} ({match_percentage:.2f}%), "
+                            f"Coverage: {coverage:.2f}%, Gaps: {hsp_gaps}, "
+                            f"Query Seq: {hsp_qseq}, Hit Seq: {hsp_hseq}\n")
+                wrapped_hit_info = textwrap.fill(hit_info, width=120, subsequent_indent='    ')
+                summary_file.write(wrapped_hit_info + "\n\n")
+
+    # After processing all queries, print the total number of hits found
+    print(f"Total number of hits found: {total_hits}")
+
+
 def write_annotations_to_text(summary, output_file):
     with open(output_file, 'w') as file:
         for protein_id, annotations in summary.items():
@@ -203,6 +260,7 @@ def write_annotations_to_text(summary, output_file):
 
                 file.write("\n")
 
+
 def load_ngram_model(filename):
     """
     Load a model from a file using pickle.
@@ -220,7 +278,7 @@ def load_ngram_model(filename):
 
 def load_nn_model_and_encoder(model_path, encoder_path):
     # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
-    model = LSTMProteinGenerator(vocab_size=26, embedding_dim=64, hidden_dim=128, num_layers=4)
+    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=32, hidden_dim=64, num_layers=2)
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.eval()  # Set the model to evaluation mode
     model.to("cpu")  # Ensure the model is fully on the CPU
@@ -402,24 +460,6 @@ def generate_proteins_ngram_interface(model, model_type):
     print("Generated proteins saved to {}".format(output_filename))
 
 
-def add_headers_to_diamond_output(output_file, headers):
-    # Define your headers as a list of column names. For example:
-    # Read the TSV file without headers
-    df = pd.read_csv(output_file, sep='\t', header=None)
-
-    # Assign the headers to the dataframe
-    df.columns = headers
-
-    # Write the dataframe back to the file with headers
-    df.to_csv(output_file, sep='\t', index=False)
-
-
-def count_fasta_sequences(fasta_file):
-    """Count the number of sequences in a FASTA file."""
-    with open(fasta_file, 'r') as file:
-        return sum(1 for line in file if line.startswith('>'))
-
-
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
     """
     Executes a DIAMOND BLASTP search for a given FASTA file against a specified protein database
@@ -445,41 +485,44 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
         subprocess.CalledProcessError: If the DIAMOND BLASTP command fails during execution, this error is raised with
                                         details about the failure.
     """
-    results_filename = "{}_{}_diamond_blastp.tsv".format(database, fasta_file.removesuffix('.fasta'))
-    output_file = DIAMOND_RESULTS_PATH+results_filename
+    results_filename = "{}_{}_diamond_blastp.xml".format(database, fasta_file.removesuffix('.fasta'))
+    results_directory = os.path.join(DIAMOND_RESULTS_PATH, fasta_file.removesuffix('.fasta'))
+    os.makedirs(results_directory, exist_ok=True)
+    output_file = os.path.join(results_directory, results_filename)
 
     diamond_cmd = [
         'diamond', 'blastp',
         '--db', diamond_db_path,
         '--query', GENERATED_PROTEINS_RESULTS_PATH+fasta_file,
         '--out', output_file,
-        '--outfmt', '6',
-        '--max-target-seqs', '1',
-        '--evalue', '1e-3'
+        '--outfmt', '5',  # '15' for JSON output
+        '--max-target-seqs', '5',
+        '--evalue', '1e-3',
     ]
 
     try:
         print("\nRunning DIAMOND BLASTP against the {} database for {}...".format(database.upper(),fasta_file))
+        start_time = time.time()
         subprocess.run(diamond_cmd, check=True)
+        end_time = time.time()
 
         # Check if output file is empty or does not exist
         if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
             print("\nNo matches found. No file created or the file is empty for {}.".format(fasta_file))
             return  # Exit the function as there's nothing further to do
 
-        print("\nAnalysis complete. Results are saved in {}.".format(output_file))
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            print("\nAnalysis complete. Results are saved in {}, "
+                  "and took {:.2f} seconds.".format(output_file, end_time - start_time))
+            # Define a path for the summary file
+            summary_output_path = os.path.join(results_directory,
+                                               f"{database}_{fasta_file.removesuffix('.fasta')}_summary.txt")
+            # Call the function to parse XML and write summary
+            parse_diamond_xml(output_file, summary_output_path)
+            print(f"DIAMOND BLASTp summary written to {summary_output_path}")
+        else:
+            print("\nNo matches found. No file created or the file is empty for {}.".format(fasta_file))
 
-        headers = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
-                   "evalue", "bitscore"]
-        add_headers_to_diamond_output(output_file, headers)
-
-        # Process and report results
-        df = pd.read_csv(output_file, sep='\t')
-        matched_proteins = df['qseqid'].nunique()
-        avg_identity = df['pident'].mean()
-
-        print("Matched proteins: {}".format(matched_proteins))
-        print("Average identity: {:.2f}%".format(avg_identity))
     except subprocess.CalledProcessError as e:
         print("Error during DIAMOND BLASTP execution: ", e)
 
@@ -509,6 +552,7 @@ def run_interpro_scan(selected_file, email):
     ]
 
     # Execute the command
+    print("\nRUNNING InterProScan...")
     start_time = time.time()
     result = subprocess.run(command, capture_output=True, text=True)
     end_time = time.time()
@@ -536,7 +580,7 @@ def run_interpro_scan(selected_file, email):
         print("Expected output file not found: {}".format(output_file))
         return
 
-    print("InterProScan results saved to {}, ".format(output_file),
+    print("InterProScan results saved to {},".format(output_file),
           "and took {:.2f} seconds.".format(end_time - start_time))
 
     # Assuming parse_interproscan_results and write_annotations_to_csv are implemented correctly
@@ -809,7 +853,7 @@ def main_menu():
         elif choice == '2':
             analyse_proteins_menu()
         elif choice == '3':
-            print("Exiting the program.")
+            print("\nExiting the program...")
             break
         else:
             print("Invalid choice. Please enter 1, 2, or 3.")
