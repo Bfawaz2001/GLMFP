@@ -98,9 +98,9 @@ class TransformerProteinGenerator(nn.Module):
         return output
 
 
-def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
+def train(model, train_loader, val_loader, optimiser, criterion, epochs, model_path, label_encoder):
     """Training loop for the Transformer model with gradient accumulation and gradient clipping."""
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
+    scheduler = ReduceLROnPlateau(optimiser, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
     scaler = GradScaler()
     accumulation_steps = 4  # Define how many steps to accumulate gradients over
@@ -109,7 +109,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
-        optimizer.zero_grad()
+        optimiser.zero_grad()
 
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(device), targets.to(device)
@@ -124,12 +124,12 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             # Perform parameter update every accumulation_steps
             if (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
                 # Gradient clipping
-                scaler.unscale_(optimizer)  # Unscales the gradients of optimizer's assigned params in-place
+                scaler.unscale_(optimiser)  # Unscales the gradients of optimiser's assigned params in-place
                 clip_grad_norm_(model.parameters(), max_grad_norm)
 
-                scaler.step(optimizer)
+                scaler.step(optimiser)
                 scaler.update()
-                optimizer.zero_grad()
+                optimiser.zero_grad()
 
             # Optional: Clear memory to prevent OOM
             del inputs, targets, outputs, loss
@@ -181,11 +181,12 @@ def main(fasta_file, model_path):
                             num_workers=1)
 
     model = TransformerProteinGenerator(vocab_size).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimiser = optim.Adam(model.parameters(), lr=0.01)
     criterion = nn.CrossEntropyLoss()
 
-    train(model, train_loader, val_loader, optimizer, criterion, epochs=50, model_path=model_path,
+    train(model, train_loader, val_loader, optimiser, criterion, epochs=50, model_path=model_path,
           label_encoder=label_encoder)
+
 
 if __name__ == "__main__":
     fasta_file = "uniprot_sprot.fasta"  # Update path as necessary

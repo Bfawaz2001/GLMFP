@@ -168,12 +168,12 @@ def parse_interproscan_results(data):
     return summary
 
 
-def parse_diamond_xml(xml_file_path, summary_output_path):
+def parse_blastp_xml(xml_file_path, summary_output_path):
     """
     Parse DIAMOND BLASTp XML output, calculate the match percentage for each hit,
     and write a formatted summary to a text file with a maximum of 120 characters per line.
     Additionally, print the total number of hits found. Now also includes gaps, query and hit sequences,
-    alignment coverage, and bit score.
+    alignment coverage, and a bit score.
 
     Args:
         xml_file_path (str): Path to the DIAMOND BLASTp XML output file.
@@ -224,7 +224,7 @@ def parse_diamond_xml(xml_file_path, summary_output_path):
     print(f"Total number of hits found: {total_hits}")
 
 
-def write_annotations_to_text(summary, output_file):
+def write_interpro_summary(summary, output_file):
     with open(output_file, 'w') as file:
         for protein_id, annotations in summary.items():
             file.write(f"Protein ID: {protein_id}\n")
@@ -252,7 +252,8 @@ def write_annotations_to_text(summary, output_file):
 
                 if annotation['match_details']:
                     match_details_str = "; ".join([f"Start: {md.get('start', 'N/A')}, End: {md.get('end', 'N/A')}, "
-                                                   f"Score: {md.get('score', 'N/A')}, Evalue: {md.get('evalue', 'N/A')}, "
+                                                   f"Score: {md.get('score', 'N/A')}, Evalue: {md.get('evalue', 'N/A')}"
+                                                   f", "
                                                    f"Matched Sequence: {md.get('sequence_match', 'N/A')}"
                                                    for md in annotation['match_details']])
                     file.write(
@@ -288,7 +289,6 @@ def load_nn_model_and_encoder(model_path, encoder_path):
         label_encoder = pickle.load(file)
 
     return model, label_encoder
-
 
 
 def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
@@ -501,7 +501,7 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
     ]
 
     try:
-        print("\nRunning DIAMOND BLASTP against the {} database for {}...".format(database.upper(),fasta_file))
+        print("\nRunning DIAMOND BLASTP against the {} database for {}...".format(database.upper(), fasta_file))
         start_time = time.time()
         subprocess.run(diamond_cmd, check=True)
         end_time = time.time()
@@ -518,7 +518,7 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
             summary_output_path = os.path.join(results_directory,
                                                f"{database}_{fasta_file.removesuffix('.fasta')}_summary.txt")
             # Call the function to parse XML and write summary
-            parse_diamond_xml(output_file, summary_output_path)
+            parse_blastp_xml(output_file, summary_output_path)
             print(f"DIAMOND BLASTp summary written to {summary_output_path}")
         else:
             print("\nNo matches found. No file created or the file is empty for {}.".format(fasta_file))
@@ -589,7 +589,7 @@ def run_interpro_scan(selected_file, email):
             data = json.load(json_file)
         summary = parse_interproscan_results(data)
         csv_output_file = os.path.join(results_directory, "{}_summary.txt".format(selected_file.removesuffix('.fasta')))
-        write_annotations_to_text(summary, csv_output_file)
+        write_interpro_summary(summary, csv_output_file)
         print("Annotations summary saved to {}".format(csv_output_file))
     except Exception as e:
         print("An error occurred while parsing or writing the summary: {}".format(e))
@@ -649,7 +649,7 @@ def summary_protein_sequences(selected_file):
             summary_file.write("Amino Acid Counts and Frequencies:\n")
             for aa, count in composition.items():
                 frequency = percentage_composition[aa]
-                summary_file.write("  {}: Count = {}, Frequency = {:.2f}%\n".format(aa,count,frequency))
+                summary_file.write("  {}: Count = {}, Frequency = {:.2f}%\n".format(aa, count, frequency))
 
             entropy = calculate_shannon_entropy(sequence)
             mw, ip = calculate_physicochemical_properties(sequence)
@@ -696,7 +696,7 @@ def analysis_options(selected_file):
     print("\nAnalysis Tool Selection Menu")
     print("1. Compare against known protein sequences (DIAMOND BLASTp)")
     print("2. Label Protein Functionalities (InterProScan)")
-    print("3. Summary of proteins sequences (amino acid composition, shannon entropy, physiochemistry)")
+    print("3. Summary of proteins sequences (amino acid composition, shannon entropy, physical chemistry)")
     print("4. Re-select protein FASTA file")
     print("5. Go back to Main Menu")
     option = input("Select an option for analysis: ")
