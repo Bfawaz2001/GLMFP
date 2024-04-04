@@ -1,10 +1,7 @@
-import gc
 import math
 import pickle
 import torch
 from torch import optim, nn
-from torch.nn.utils import clip_grad_norm_
-from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import Dataset, DataLoader
 from Bio import SeqIO
@@ -12,10 +9,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch.cuda.amp import GradScaler, autocast
+from torch.nn.utils import clip_grad_norm_
 
-# Setup device: use CUDA for GPU acceleration if available, otherwise use the CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using {'GPU' if device.type == 'cuda' else 'CPU'}")
+# Setup device: use Cuda for GPU acceleration otherwise use the CPU
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    print("Using GPU:", torch.cuda.get_device_name(0))
+else:
+    device = torch.device("cpu")
+    print("Using CPU")
 
 
 class ProteinSequenceDataset(Dataset):
@@ -37,7 +40,7 @@ class ProteinSequenceDataset(Dataset):
 def encode_sequences(sequences):
     """Encode protein sequences using Label Encoding."""
     label_encoder = LabelEncoder()
-    label_encoder.fit(list("ACDEFGHIKLMNPQRSTVWYXZBUO"))  # Extended amino acid alphabet
+    label_encoder.fit(list("ABCDEFGHIKLMNOPQRSTUVWXYZ"))  # Extended amino acid alphabet
     encoded_seqs = [torch.tensor(label_encoder.transform(list(seq))) for seq in sequences]
     return encoded_seqs, label_encoder.classes_
 
@@ -51,7 +54,7 @@ def pad_collate(batch):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
+    def __init__(self, d_model, dropout=0.1, max_len=1500):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -71,7 +74,7 @@ class PositionalEncoding(nn.Module):
 
 class TransformerProteinGenerator(nn.Module):
     """Transformer model for protein sequence generation."""
-    def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=6, dropout=0.1):
+    def __init__(self, vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1):
         super(TransformerProteinGenerator, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -98,60 +101,58 @@ class TransformerProteinGenerator(nn.Module):
         return output
 
 
-def train(model, train_loader, val_loader, optimiser, criterion, epochs, model_path, label_encoder):
-    """Training loop for the Transformer model with gradient accumulation and gradient clipping."""
-    scheduler = ReduceLROnPlateau(optimiser, 'min', factor=0.1, patience=10)
+def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
+    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
-    scaler = GradScaler()
-    accumulation_steps = 4  # Define how many steps to accumulate gradients over
     max_grad_norm = 1.0  # Define maximum gradient norm for clipping
+    scaler = GradScaler()  # Initialize the gradient scaler for mixed precision training
 
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
-        optimiser.zero_grad()
+        optimizer.zero_grad()
 
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(device), targets.to(device)
 
+            # Mixed precision training
             with autocast():
                 outputs = model(inputs)
-                loss = criterion(outputs.transpose(1, 2), targets) / accumulation_steps  # Scale loss
+                loss = criterion(outputs.transpose(1, 2), targets)
 
-            scaler.scale(loss).backward()  # Accumulate gradients
-            train_loss += loss.item() * accumulation_steps  # Undo the scaling for logging purposes
+            # Scales the loss, and calls backward() to create scaled gradients
+            scaler.scale(loss).backward()
+            train_loss += loss.item()
 
-            # Perform parameter update every accumulation_steps
-            if (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
-                # Gradient clipping
-                scaler.unscale_(optimiser)  # Unscales the gradients of optimiser's assigned params in-place
-                clip_grad_norm_(model.parameters(), max_grad_norm)
+            # Gradient clipping
+            scaler.unscale_(optimizer)  # Unscales the gradients of optimizer's assigned params in-place
+            clip_grad_norm_(model.parameters(), max_grad_norm)
 
-                scaler.step(optimiser)
-                scaler.update()
-                optimiser.zero_grad()
+            # optimizer's step is skipped in case the gradients contain infs or NaNs
+            scaler.step(optimizer)
+            scaler.update()
+
+            optimizer.zero_grad()
 
             # Optional: Clear memory to prevent OOM
             del inputs, targets, outputs, loss
-            gc.collect()
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        # Validation loop remains unchanged
+        # Validation loop
         val_loss = 0.0
         model.eval()
         with torch.no_grad():
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
-                with autocast():
-                    outputs = model(inputs)
-                    loss = criterion(outputs.transpose(1, 2), targets)
+                outputs = model(inputs)
+                loss = criterion(outputs.transpose(1, 2), targets)
                 val_loss += loss.item()
 
         val_loss_avg = val_loss / len(val_loader)
         scheduler.step(val_loss_avg)
 
-        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
-              f'Validation Loss: {val_loss_avg}')
+        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, Validation Loss: {val_loss_avg}')
 
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
@@ -181,14 +182,12 @@ def main(fasta_file, model_path):
                             num_workers=1)
 
     model = TransformerProteinGenerator(vocab_size).to(device)
-    optimiser = optim.Adam(model.parameters(), lr=0.01)
+    optimiser = optim.Adam(model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
-    train(model, train_loader, val_loader, optimiser, criterion, epochs=50, model_path=model_path,
+    train(model, train_loader, val_loader, optimiser, criterion, epochs=25, model_path=model_path,
           label_encoder=label_encoder)
 
 
 if __name__ == "__main__":
-    fasta_file = "uniprot_sprot.fasta"  # Update path as necessary
-    model_path = "transformer_model.pth"  # Update path as necessary
-    main(fasta_file, model_path)
+    main("uniprot_sprot.fasta", "transformer_model.pth")

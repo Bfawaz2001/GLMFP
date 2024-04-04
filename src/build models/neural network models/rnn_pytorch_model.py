@@ -1,7 +1,5 @@
-import gc
 import pickle
 import torch
-from torch.nn.utils import clip_grad_norm_
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import Dataset, DataLoader
@@ -73,78 +71,40 @@ class LSTMProteinGenerator(nn.Module):
 def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_path, label_encoder):
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
-    scaler = GradScaler()
-
-    # Define the number of steps for gradient accumulation
-    accumulation_steps = 4
-    accumulation_counter = 0  # Counter to keep track of accumulation steps
+    scaler = GradScaler()  # For AMP
 
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
 
-        # Reset optimizer gradients at the start of each epoch
-        optimizer.zero_grad()
-
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(device), targets.to(device)
 
-            # Autocast context for mixed precision
+            optimizer.zero_grad()  # Clear gradients
+
+            # Using AMP for reduced memory usage
             with autocast():
                 outputs = model(inputs)
-                loss = criterion(outputs.transpose(1, 2), targets) / accumulation_steps
+                loss = criterion(outputs.transpose(1, 2), targets)
 
-            # Backward pass
-            scaler.scale(loss).backward()
-            train_loss += loss.item() * accumulation_steps  # Scale loss back
+            scaler.scale(loss).backward()  # Scale the loss before backward
+            scaler.step(optimizer)  # Scale for optimizer
+            scaler.update()  # Update scale for next iteration
 
-            accumulation_counter += 1
-
-            # Perform model update steps if accumulation counter has reached the defined steps
-            if accumulation_counter % accumulation_steps == 0 or batch_idx == len(train_loader) - 1:
-                # Adjust gradients if necessary (gradient clipping, etc.)
-                scaler.unscale_(optimizer)
-                clip_grad_norm_(model.parameters(), max_norm=1)
-
-                # Optimizer step
-                scaler.step(optimizer)
-                scaler.update()
-
-                # Zero gradients
-                optimizer.zero_grad()
-
-                # Reset accumulation counter after model update
-                accumulation_counter = 0
-
-            # Memory cleanup after each batch
-            del inputs, targets, outputs, loss
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            train_loss += loss.item()
 
         # Validation phase
         val_loss = 0.0
         model.eval()
-        with torch.no_grad():
+        with torch.no_grad(), autocast():
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
-
-                with autocast():
-                    outputs = model(inputs)
-                    loss = criterion(outputs.transpose(1, 2), targets)
-
+                outputs = model(inputs)
+                loss = criterion(outputs.transpose(1, 2), targets)
                 val_loss += loss.item()
 
-                # Memory cleanup in validation phase
-                del inputs, targets, outputs, loss
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
         val_loss_avg = val_loss / len(val_loader)
-
-        # Step scheduler
-        scheduler.step(val_loss_avg)
+        scheduler.step(val_loss_avg)  # Adjust learning rate
 
         # Logging
         print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
@@ -166,9 +126,9 @@ def main(fasta_file, model_path):
     sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
     encoded_seqs, label_encoder_classes = encode_sequences(sequences)
     label_encoder = LabelEncoder()
-    vocab_size = len(set("ACDEFGHIKLMNPQRSTVWYXZBUO")) + 1
+    vocab_size = len(set("ABCDEFGHIKLMNOPQRSTUVWXYZ")) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.25, random_state=101)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=10)
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
@@ -179,7 +139,7 @@ def main(fasta_file, model_path):
                             num_workers=1)
 
     model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=6).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
     train(model, train_loader, val_loader, optimizer, criterion, epochs=10, model_path=model_path,

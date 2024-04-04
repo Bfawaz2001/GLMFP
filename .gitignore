@@ -164,3 +164,4 @@ data/diamond db
 data/alpha fold results
 data/eggnog db
 data/models/neural network
+data/models/transformer
