@@ -14,10 +14,12 @@ import matplotlib.pyplot as plt
 import math
 import torch.nn.functional as F
 import xml.etree.ElementTree as ET
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 # File path to the models
 NGRAM_MODEL_PATH = "../../data/models/n-gram/"
-RNN_MODEL_PATH = '../../data/models/neural network/'
+NN_MODEL_PATH = '../../data/models/neural network/'
+TRANS_MODEL_PATH = '../../data/models/transformer/'
 
 # File Paths to results directories
 GENERATED_PROTEINS_RESULTS_PATH = "../../results/generated proteins/"
@@ -34,9 +36,72 @@ IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
 
 
-def defaultdict_int():
-    """Returns a defaultdict with int as the default factory, replacing lambda."""
-    return defaultdict(int)
+# def defaultdict_int():
+#     """Returns a defaultdict with int as the default factory, replacing lambda."""
+#     return defaultdict(int)
+
+class LSTMProteinGenerator(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers):
+        super(LSTMProteinGenerator, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=True, dropout=0.5)
+        self.fc = nn.Linear(hidden_dim, vocab_size)
+
+    def forward(self, x):
+        embeds = self.embedding(x)
+        lstm_out, _ = self.lstm(embeds)
+        out = self.fc(lstm_out)
+        return out
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=1500):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)  # Shape [sequence length, 1, embedding size] for correct broadcasting
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x expected to be of shape [sequence length, batch size, embedding size]
+        x = x + self.pe[:x.size(0), :]  # Corrected indexing for dynamic sequence lengths
+        return self.dropout(x)
+
+
+class TransformerProteinGenerator(nn.Module):
+    """Transformer model for protein sequence generation."""
+    def __init__(self, vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1):
+        super(TransformerProteinGenerator, self).__init__()
+        self.model_type = 'Transformer'
+        self.src_mask = None
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout,
+                                                 batch_first=True) # Ensure batch_first=True
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
+        self.encoder = nn.Embedding(vocab_size, d_model)
+        self.d_model = d_model
+        self.decoder = nn.Linear(d_model, vocab_size)
+
+        self.init_weights()
+
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src):
+        src = self.encoder(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src)
+        output = self.decoder(output)
+        return output
 
 
 def parse_fasta(file_path):
@@ -57,18 +122,78 @@ def parse_fasta(file_path):
             yield seq_id, ''.join(sequence)
 
 
-class LSTMProteinGenerator(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers):
-        super(LSTMProteinGenerator, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=True, dropout=0.5)
-        self.fc = nn.Linear(hidden_dim, vocab_size)
+def load_ngram_model(filename):
+    """
+    Load a model from a file using pickle.
 
-    def forward(self, x):
-        embeds = self.embedding(x)
-        lstm_out, _ = self.lstm(embeds)
-        out = self.fc(lstm_out)
-        return out
+    Args:
+    filename (str): Path to the file where the model is saved.
+
+    Returns:
+    dict: The loaded model.
+    """
+    with open(filename, 'rb') as file:
+        model = pickle.load(file)
+    return model
+
+
+def load_nn_model_and_encoder(model_path, encoder_path):
+    """
+    Load the Neural Network (LSTM) model and its associated label encoder from disk.
+
+    Parameters:
+    - model_path (str): The file path to the NN model's state dictionary.
+    - encoder_path (str): The file path to the label encoder.
+
+    Returns:
+    - model: The loaded NN (LSTM) model.
+    - label_encoder: The loaded label encoder.
+    """
+    # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
+    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=32, hidden_dim=64, num_layers=2)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval()  # Set the model to evaluation mode
+    model.to("cpu")  # Ensure the model is fully on the CPU
+
+    # Load the encoder as before
+    with open(encoder_path, 'rb') as file:
+        label_encoder = pickle.load(file)
+
+    return model, label_encoder
+
+
+def load_trans_model_and_encoder(model_path, encoder_path):
+    """
+    Load the Transformer model and its associated label encoder from disk.
+
+    Parameters:
+    - model_path (str): The file path to the Transformer model's state dictionary.
+    - encoder_path (str): The file path to the label encoder.
+
+    Returns:
+    - model: The loaded Transformer model.
+    - label_encoder: The loaded label encoder.
+    """
+    # Initialize the model structure as defined in the transformer_model.py
+    # Adjust these parameters as necessary to match your model's configuration
+    vocab_size = 26  # Update this based on your dataset
+    model = TransformerProteinGenerator(vocab_size=vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1)
+
+    # Load the model's state dictionary
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval()  # Set the model to evaluation mode
+    model.to("cpu")  # Ensure the model is fully on the CPU
+
+    # Load the label encoder
+    with open(encoder_path, 'rb') as file:
+        label_encoder = pickle.load(file)
+
+    try:
+        print(label_encoder.classes_)
+    except AttributeError:
+        print("The LabelEncoder is not fitted.")
+
+    return model, label_encoder
 
 
 def calculate_amino_acid_composition(sequences):
@@ -262,55 +387,70 @@ def write_interpro_summary(summary, output_file):
                 file.write("\n")
 
 
-def load_ngram_model(filename):
+def generate_proteins_ngram_interface(model, model_type):
     """
-    Load a model from a file using pickle.
-
-    Args:
-    filename (str): Path to the file where the model is saved.
-
-    Returns:
-    dict: The loaded model.
+    Interface for generating proteins using the selected model.
     """
-    with open(filename, 'rb') as file:
-        model = pickle.load(file)
-    return model
+    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
+                          "model name added automatically to beginning): ")
+
+    output_filename = "{}_{}.fasta".format(model_type, base_filename)
+
+    num_proteins = int(input("Enter the number of proteins to be created: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
+
+    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
+        for i in range(num_proteins):
+            protein = generate_ngram_protein(model, min_length, max_length, model_type)
+            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
+            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+
+    print("Generated proteins saved to {}".format(output_filename))
 
 
-def load_nn_model_and_encoder(model_path, encoder_path):
-    # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
-    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=32, hidden_dim=64, num_layers=2)
-    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-    model.eval()  # Set the model to evaluation mode
-    model.to("cpu")  # Ensure the model is fully on the CPU
+def generate_proteins_nn_interface(model, model_type, encoder):
+    """
+    Interface for generating proteins using the selected model.
+    """
+    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
+                          "model name added automatically to beginning): ")
 
-    # Load the encoder as before
-    with open(encoder_path, 'rb') as file:
-        label_encoder = pickle.load(file)
+    output_filename = "{}_{}.fasta".format(model_type, base_filename)
 
-    return model, label_encoder
+    num_proteins = int(input("Enter the number of proteins to be created: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
+
+    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
+        for i in range(num_proteins):
+            protein = generate_nn_protein(model, encoder, min_length, max_length)
+            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
+            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+
+    print("Generated proteins saved to {}".format(output_filename))
 
 
-def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
-    start_seq = 'M'
-    device = next(model.parameters()).device
-    sequence = [label_encoder.transform([start_seq])[0]]
-    generated_sequence = start_seq
-    target_length = random.randint(min_length, max_length)
+def generate_proteins_trans_interface(model, model_type, encoder):
+    """
+    Interface for generating proteins using the selected model.
+    """
+    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
+                          "model name added automatically to beginning): ")
 
-    while len(generated_sequence) < target_length:
-        current_input = torch.tensor([sequence[-50:]], dtype=torch.long).to(device)
-        with torch.no_grad():
-            output = model(current_input)
-            output = output[:, -1, :] / temperature  # Scale the logits before applying softmax
-            probabilities = F.softmax(output, dim=1)
-            next_index = torch.multinomial(probabilities, 1).item()
+    output_filename = "{}_{}.fasta".format(model_type, base_filename)
 
-        next_aa = label_encoder.inverse_transform([next_index])[0]
-        generated_sequence += next_aa
-        sequence.append(next_index)
+    num_proteins = int(input("Enter the number of proteins to be created: "))
+    min_length = int(input("Enter the minimum length of the amino acids: "))
+    max_length = int(input("Enter the maximum length of the amino acids: "))
 
-    return generated_sequence
+    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
+        for i in range(num_proteins):
+            protein = generate_trans_protein(model, encoder, min_length, max_length)
+            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
+            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+
+    print("Generated proteins saved to {}".format(output_filename))
 
 
 def generate_ngram_protein(model, min_length, max_length, model_type):
@@ -416,48 +556,64 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 
-def generate_proteins_nn_interface(model, model_type, encoder):
+def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
+    start_seq = 'M'
+    device = next(model.parameters()).device
+    sequence = [label_encoder.transform([start_seq])[0]]
+    generated_sequence = start_seq
+    target_length = random.randint(min_length, max_length)
+
+    while len(generated_sequence) < target_length:
+        current_input = torch.tensor([sequence[-50:]], dtype=torch.long).to(device)
+        with torch.no_grad():
+            output = model(current_input)
+            output = output[:, -1, :] / temperature  # Scale the logits before applying softmax
+            probabilities = F.softmax(output, dim=1)
+            next_index = torch.multinomial(probabilities, 1).item()
+
+        next_aa = label_encoder.inverse_transform([next_index])[0]
+        generated_sequence += next_aa
+        sequence.append(next_index)
+
+    return generated_sequence
+
+
+def generate_trans_protein(model, label_encoder, min_length, max_length):
     """
-    Interface for generating proteins using the selected model.
+    Generate a protein sequence using the Transformer model, starting with a seed sequence.
+
+    Parameters:
+    - model: The loaded Transformer model.
+    - label_encoder: The loaded label encoder.
+    - min_length (int): Minimum length of the generated protein sequence.
+    - max_length (int): Maximum length of the generated protein sequence.
+
+    Returns:
+    - The generated protein sequence as a string.
     """
-    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
-                          "model name added automatically to beginning): ")
+    # Initialize with the start sequence 'M' (Methionine)
+    start_seq = 'M'
+    device = next(model.parameters()).device  # Identify if the model is on CPU or GPU
+    sequence = [label_encoder.transform([start_seq])[0]]  # Encode the start sequence
+    generated_sequence = start_seq  # Start the sequence with Methionine
+    sequence_length = random.randint(min_length, max_length)  # Determine the target sequence length
 
-    output_filename = "{}_{}.fasta".format(model_type, base_filename)
+    model.eval()  # Set the model to evaluation mode
 
-    num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the amino acids: "))
-    max_length = int(input("Enter the maximum length of the amino acids: "))
+    with torch.no_grad():
+        while len(generated_sequence) < sequence_length:
+            input_tensor = torch.tensor([sequence[-50:]], dtype=torch.long).to(device)  # Prepare the input tensor
+            output = model(input_tensor)  # Obtain logits from the model
+            output = output[:, -1, :]  # Focus on the last output predictions
+            probabilities = F.softmax(output, dim=1)  # Apply softmax to convert logits to probabilities
+            next_index = torch.multinomial(probabilities, 1).item()  # Sample from the probability distribution
 
-    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
-        for i in range(num_proteins):
-            protein = generate_nn_protein(model, encoder, min_length, max_length)
-            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
-            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+            next_aa = label_encoder.inverse_transform([next_index])[0]  # Decode the predicted index back to amino acid
+            generated_sequence += next_aa  # Append the predicted amino acid to the generated sequence
+            sequence.append(next_index)  # Update the sequence with the predicted index for next iteration
 
-    print("Generated proteins saved to {}".format(output_filename))
+    return generated_sequence
 
-
-def generate_proteins_ngram_interface(model, model_type):
-    """
-    Interface for generating proteins using the selected model.
-    """
-    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
-                          "model name added automatically to beginning): ")
-
-    output_filename = "{}_{}.fasta".format(model_type, base_filename)
-
-    num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the amino acids: "))
-    max_length = int(input("Enter the maximum length of the amino acids: "))
-
-    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
-        for i in range(num_proteins):
-            protein = generate_ngram_protein(model, min_length, max_length, model_type)
-            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
-            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
-
-    print("Generated proteins saved to {}".format(output_filename))
 
 
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
@@ -751,6 +907,24 @@ def analyse_proteins_menu():
         print("An error occurred: {}".format(e))
 
 
+def run_nn_model():
+    model_type = 'nn_lstm'
+    model_path = NN_MODEL_PATH + 'nn_model.pt'
+    encoder_path = NN_MODEL_PATH + 'nn_label_encoder.pkl'
+
+    model, encoder = load_nn_model_and_encoder(model_path, encoder_path)
+    generate_proteins_nn_interface(model, model_type, encoder)
+
+
+def run_trans_model():
+    model_type = 'transformer'
+    model_path = TRANS_MODEL_PATH + 'transformer_model.pt'
+    encoder_path = TRANS_MODEL_PATH + 'transformer_label_encoder.pkl'
+
+    model, encoder = load_trans_model_and_encoder(model_path, encoder_path)
+    generate_proteins_trans_interface(model, model_type, encoder)
+
+
 def ngram_model_menu():
     """
     Display the model selection menu and handle user input.
@@ -790,42 +964,24 @@ def ngram_model_menu():
     generate_proteins_ngram_interface(model, model_type)
 
 
-def rnn_model_menu():
-    print("\nSelect a Neural Network model:")
-    print("1. RNN (LSTM)")
-    print("2. Back to Main Menu")
-    choice = input("Enter your choice: ")
-
-    if choice == '1':
-        model_type = 'nn_lstm_pytorch'
-        model_path = RNN_MODEL_PATH + 'nn_pytorch.pt'
-        encoder_path = RNN_MODEL_PATH + 'nn_label_encoder.pkl'
-    elif choice == '2':
-        print("\nGoing back to Main Menu...")
-        return
-    else:
-        print("Invalid choice. Returning to main menu.")
-        return
-
-    model, encoder = load_nn_model_and_encoder(model_path, encoder_path)
-    generate_proteins_nn_interface(model, model_type, encoder)
-
-
 def model_menu():
     """
     Display the model selection menu and handle user input.
     """
     print("\nSelect a model:")
-    print("1. N-gram Models")
-    print("2. RNN Models")
-    print("3. Back to Main Menu")
+    print("1. N-Gram Models")
+    print("2. Neural Network (LSTM) Model")
+    print("3. Transformer Model")
+    print("4. Back to Main Menu")
     choice = input("Enter your choice: ")
 
     if choice == '1':
         ngram_model_menu()
     elif choice == '2':
-        rnn_model_menu()
+        run_nn_model()
     elif choice == '3':
+        run_trans_model()
+    elif choice == '4':
         print("\nGoing back to Main Menu...")
         return
     else:

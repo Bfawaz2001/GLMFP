@@ -42,7 +42,7 @@ def encode_sequences(sequences):
     label_encoder = LabelEncoder()
     label_encoder.fit(list("ABCDEFGHIKLMNOPQRSTUVWXYZ"))  # Extended amino acid alphabet
     encoded_seqs = [torch.tensor(label_encoder.transform(list(seq))) for seq in sequences]
-    return encoded_seqs, label_encoder.classes_
+    return encoded_seqs, label_encoder
 
 
 def pad_collate(batch):
@@ -54,7 +54,7 @@ def pad_collate(batch):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=1500):
+    def __init__(self, d_model, dropout=0.1, max_len=2000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -74,7 +74,7 @@ class PositionalEncoding(nn.Module):
 
 class TransformerProteinGenerator(nn.Module):
     """Transformer model for protein sequence generation."""
-    def __init__(self, vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1):
+    def __init__(self, vocab_size, d_model=64, nhead=4, num_layers=8, dropout=0.1):
         super(TransformerProteinGenerator, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -167,27 +167,28 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
 def main(fasta_file, model_path):
     """Main function to execute the model training."""
     sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
-    encoded_seqs, label_encoder_classes = encode_sequences(sequences)
-    label_encoder = LabelEncoder()
-    vocab_size = len(label_encoder_classes) + 1  # Plus one for padding
+    encoded_seqs, label_encoder = encode_sequences(sequences)  # Note the direct capture of the fitted encoder
+    vocab_size = len(label_encoder.classes_) + 1  # Plus one for padding
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=10)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=4)
 
+    print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=pad_collate, pin_memory=True,
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate, pin_memory=True,
                               num_workers=1)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=1)
 
     model = TransformerProteinGenerator(vocab_size).to(device)
     optimiser = optim.Adam(model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
-    train(model, train_loader, val_loader, optimiser, criterion, epochs=25, model_path=model_path,
-          label_encoder=label_encoder)
+    print("Training model...")
+    train(model, train_loader, val_loader, optimiser, criterion, epochs=20, model_path=model_path,
+          label_encoder=label_encoder)  # Passing the fitted encoder
 
 
 if __name__ == "__main__":
-    main("uniprot_sprot.fasta", "transformer_model.pth")
+    main("uniprot_sprot.fasta", "transformer_model.pt")

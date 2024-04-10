@@ -128,25 +128,27 @@ def main(fasta_file, model_path):
     label_encoder = LabelEncoder()
     vocab_size = len(set("ABCDEFGHIKLMNOPQRSTUVWXYZ")) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=10)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=4)
+
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate,
+    train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True, collate_fn=pad_collate,
                               pin_memory=True, num_workers=1)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=1)
 
-    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=6).to(device)
+    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=8).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
-    train(model, train_loader, val_loader, optimizer, criterion, epochs=10, model_path=model_path,
+    print("Training model...")
+    train(model, train_loader, val_loader, optimizer, criterion, epochs=20, model_path=model_path,
           label_encoder=label_encoder)
 
 
 if __name__ == "__main__":
     fasta_file = "uniprot_sprot.fasta"  # Update the path as necessary
-    model_path = "nn_pytorch.pt"  # Update the path as necessary
+    model_path = "nn_model.pt"  # Update the path as necessary
     main(fasta_file, model_path)

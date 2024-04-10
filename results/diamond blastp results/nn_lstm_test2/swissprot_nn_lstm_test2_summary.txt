@@ -1,0 +1,120 @@
+Query ID: Protein_1
+Number of hits: 0
+
+Query ID: Protein_2
+Number of hits: 0
+
+Query ID: Protein_3
+Number of hits: 0
+
+Query ID: Protein_4
+Number of hits: 0
+
+Query ID: Protein_5
+Number of hits: 0
+
+Query ID: Protein_6
+Number of hits: 0
+
+Query ID: Protein_7
+Number of hits: 0
+
+Query ID: Protein_8
+Number of hits: 0
+
+Query ID: Protein_9
+Number of hits: 0
+
+Query ID: Protein_10
+Number of hits: 0
+
+Query ID: Protein_11
+Number of hits: 0
+
+Query ID: Protein_12
+Number of hits: 0
+
+Query ID: Protein_13
+Number of hits: 0
+
+Query ID: Protein_14
+Number of hits: 0
+
+Query ID: Protein_15
+Number of hits: 0
+
+Query ID: Protein_16
+Number of hits: 0
+
+Query ID: Protein_17
+Number of hits: 0
+
+Query ID: Protein_18
+Number of hits: 0
+
+Query ID: Protein_19
+Number of hits: 0
+
+Query ID: Protein_20
+Number of hits: 0
+
+Query ID: Protein_21
+Number of hits: 0
+
+Query ID: Protein_22
+Number of hits: 0
+
+Query ID: Protein_23
+Number of hits: 0
+
+Query ID: Protein_24
+Number of hits: 0
+
+Query ID: Protein_25
+Number of hits: 0
+
+Query ID: Protein_26
+Number of hits: 0
+
+Query ID: Protein_27
+Number of hits: 0
+
+Query ID: Protein_28
+Number of hits: 0
+
+Query ID: Protein_29
+Number of hits: 0
+
+Query ID: Protein_30
+Number of hits: 0
+
+Query ID: Protein_31
+Number of hits: 0
+
+Query ID: Protein_32
+Number of hits: 0
+
+Query ID: Protein_33
+Number of hits: 0
+
+Query ID: Protein_34
+Number of hits: 0
+
+Query ID: Protein_35
+Number of hits: 0
+
+Query ID: Protein_36
+Number of hits: 0
+
+Query ID: Protein_37
+Number of hits: 0
+
+Query ID: Protein_38
+Number of hits: 0
+
+Query ID: Protein_39
+Number of hits: 0
+
+Query ID: Protein_40
+Number of hits: 0
+
