@@ -5,7 +5,7 @@ from collections import defaultdict, Counter
 from Bio import SeqIO
 
 
-def build_bigram_model(fasta_file):
+def build_2mer_model(fasta_file):
     """
     Builds a bigram model from a FASTA file containing protein sequences.
     Parameters:
@@ -62,7 +62,7 @@ def main():
         return
 
     start_time = time.time()
-    bigram_model, start_amino_acid_counts, start_amino_acid_probs = build_bigram_model(fasta_file)
+    bigram_model, start_amino_acid_counts, start_amino_acid_probs = build_2mer_model(fasta_file)
     end_time = time.time()
 
     save_model(bigram_model, start_amino_acid_counts, start_amino_acid_probs, output_filename)

@@ -20,8 +20,7 @@ else:
 
 class ProteinSequenceDataset(Dataset):
     """Custom Dataset for loading and transforming protein sequences for sequence generation."""
-
-    def __init__(self, sequences, seq_len=50):
+    def __init__(self, sequences, seq_len=2500):
         self.sequences = sequences
         self.seq_len = seq_len
 
@@ -38,10 +37,9 @@ class ProteinSequenceDataset(Dataset):
 def encode_sequences(sequences):
     """Encode protein sequences into numerical format using Label Encoding."""
     label_encoder = LabelEncoder()
-    # Include all standard amino acids, plus some special characters for padding, etc.
     label_encoder.fit(list("ABCDEFGHIKLMNOPQRSTUVWXYZ"))
     encoded_seqs = [torch.tensor(label_encoder.transform(list(seq))) for seq in sequences]
-    return encoded_seqs, label_encoder.classes_
+    return encoded_seqs, label_encoder
 
 
 def pad_collate(batch):
@@ -72,6 +70,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
     best_val_loss = float('inf')
     scaler = GradScaler()  # For AMP
+
+    with open("nn_label_encoder.pkl", 'wb') as f:
+        pickle.dump(label_encoder, f)
+    print(f"LabelEncoder saved as nn_label_encoder.pkl.")
 
     for epoch in range(epochs):
         model.train()
@@ -116,7 +118,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
             torch.save(model.state_dict(), model_path)
             with open("nn_label_encoder.pkl", 'wb') as f:
                 pickle.dump(label_encoder, f)
-            print("Model and LabelEncoder saved.")
+            print("Model saved.")
 
     print(f"Training completed. Best model saved to {model_path}.")
 
@@ -124,11 +126,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
 def main(fasta_file, model_path):
     """Main function to run the training process."""
     sequences = [str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")]
-    encoded_seqs, label_encoder_classes = encode_sequences(sequences)
-    label_encoder = LabelEncoder()
-    vocab_size = len(set("ABCDEFGHIKLMNOPQRSTUVWXYZ")) + 1
+    encoded_seqs, label_encoder = encode_sequences(sequences)
+    vocab_size = len(label_encoder.classes_) + 1
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=4)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=64)
 
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
@@ -136,15 +137,15 @@ def main(fasta_file, model_path):
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True, collate_fn=pad_collate,
                               pin_memory=True, num_workers=1)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate, pin_memory=True,
-                            num_workers=1)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate,
+                            pin_memory=True, num_workers=1)
 
-    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=8).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    model = LSTMProteinGenerator(vocab_size, embedding_dim=64, hidden_dim=128, num_layers=3).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
     print("Training model...")
-    train(model, train_loader, val_loader, optimizer, criterion, epochs=20, model_path=model_path,
+    train(model, train_loader, val_loader, optimizer, criterion, epochs=50, model_path=model_path,
           label_encoder=label_encoder)
 
 

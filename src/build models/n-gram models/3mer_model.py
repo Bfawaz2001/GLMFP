@@ -5,7 +5,7 @@ from collections import defaultdict, Counter
 from Bio import SeqIO
 
 
-def build_trigram_model(fasta_file):
+def build_3mer_model(fasta_file):
     """
     Builds a trigram model from a FASTA file containing protein sequences.
 
@@ -67,7 +67,7 @@ def main():
         return
 
     start_time = time.time()
-    trigram_model, start_2mer_counts, start_2mer_probs = build_trigram_model(fasta_file)
+    trigram_model, start_2mer_counts, start_2mer_probs = build_3mer_model(fasta_file)
     end_time = time.time()
 
     save_model(trigram_model, start_2mer_counts, start_2mer_probs, output_filename)

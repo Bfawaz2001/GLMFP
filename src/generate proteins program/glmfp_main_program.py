@@ -1,7 +1,6 @@
 import random
 import textwrap
 import time
-from collections import defaultdict
 import subprocess
 import os
 import json
@@ -9,7 +8,7 @@ import torch
 import torch.nn as nn
 import pickle
 from Bio.SeqUtils import molecular_weight, IsoelectricPoint
-from collections import Counter
+from collections import Counter, defaultdict
 import matplotlib.pyplot as plt
 import math
 import torch.nn.functional as F
@@ -36,11 +35,13 @@ IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
 
 
-# def defaultdict_int():
-#     """Returns a defaultdict with int as the default factory, replacing lambda."""
-#     return defaultdict(int)
+def defaultdict_int():
+    """Function to return a defaultdict with int as the default factory."""
+    return defaultdict(int)
+
 
 class LSTMProteinGenerator(nn.Module):
+    """LSTM model for protein sequence generation."""
     def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers):
         super(LSTMProteinGenerator, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
@@ -55,7 +56,7 @@ class LSTMProteinGenerator(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=1500):
+    def __init__(self, d_model, dropout=0.1, max_len=2500):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -74,21 +75,18 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerProteinGenerator(nn.Module):
-    """Transformer model for protein sequence generation."""
-    def __init__(self, vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1):
+    def __init__(self, vocab_size, d_model=64, nhead=4, num_layers=3, dropout=0.1, batch_first=True):
         super(TransformerProteinGenerator, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout,
-                                                 batch_first=True) # Ensure batch_first=True
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout, batch_first=batch_first)
         self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
         self.encoder = nn.Embedding(vocab_size, d_model)
         self.d_model = d_model
         self.decoder = nn.Linear(d_model, vocab_size)
 
         self.init_weights()
-
 
     def init_weights(self):
         initrange = 0.1
@@ -150,7 +148,7 @@ def load_nn_model_and_encoder(model_path, encoder_path):
     - label_encoder: The loaded label encoder.
     """
     # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
-    model = LSTMProteinGenerator(vocab_size=27, embedding_dim=32, hidden_dim=64, num_layers=2)
+    model = LSTMProteinGenerator(vocab_size=26, embedding_dim=64, hidden_dim=128, num_layers=4)
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.eval()  # Set the model to evaluation mode
     model.to("cpu")  # Ensure the model is fully on the CPU
@@ -174,10 +172,10 @@ def load_trans_model_and_encoder(model_path, encoder_path):
     - model: The loaded Transformer model.
     - label_encoder: The loaded label encoder.
     """
-    # Initialize the model structure as defined in the transformer_model.py
+    # Initialize the model structure as defined in the transformer.py
     # Adjust these parameters as necessary to match your model's configuration
     vocab_size = 26  # Update this based on your dataset
-    model = TransformerProteinGenerator(vocab_size=vocab_size, d_model=128, nhead=4, num_layers=6, dropout=0.1)
+    model = TransformerProteinGenerator(vocab_size=vocab_size, d_model=64, nhead=4, num_layers=3, dropout=0.1)
 
     # Load the model's state dictionary
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
@@ -187,11 +185,6 @@ def load_trans_model_and_encoder(model_path, encoder_path):
     # Load the label encoder
     with open(encoder_path, 'rb') as file:
         label_encoder = pickle.load(file)
-
-    try:
-        print(label_encoder.classes_)
-    except AttributeError:
-        print("The LabelEncoder is not fitted.")
 
     return model, label_encoder
 
@@ -651,7 +644,7 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
         '--db', diamond_db_path,
         '--query', GENERATED_PROTEINS_RESULTS_PATH+fasta_file,
         '--out', output_file,
-        '--outfmt', '5',  # '15' for JSON output
+        '--outfmt', '5',
         '--max-target-seqs', '5',
         '--evalue', '1e-3',
     ]

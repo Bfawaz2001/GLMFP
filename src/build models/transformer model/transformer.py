@@ -23,7 +23,7 @@ else:
 
 class ProteinSequenceDataset(Dataset):
     """Custom Dataset for loading and transforming protein sequences."""
-    def __init__(self, sequences, seq_len=50):
+    def __init__(self, sequences, seq_len=2500):
         self.sequences = sequences
         self.seq_len = seq_len
 
@@ -54,7 +54,7 @@ def pad_collate(batch):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=2000):
+    def __init__(self, d_model, dropout=0.1, max_len=2500):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -74,12 +74,12 @@ class PositionalEncoding(nn.Module):
 
 class TransformerProteinGenerator(nn.Module):
     """Transformer model for protein sequence generation."""
-    def __init__(self, vocab_size, d_model=64, nhead=4, num_layers=8, dropout=0.1):
+    def __init__(self, vocab_size, d_model=64, nhead=4, num_layers=3, dropout=0.1, batch_first=True):
         super(TransformerProteinGenerator, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_model * 2, dropout, batch_first=batch_first)
         self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
         self.encoder = nn.Embedding(vocab_size, d_model)
         self.d_model = d_model
@@ -106,6 +106,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     best_val_loss = float('inf')
     max_grad_norm = 1.0  # Define maximum gradient norm for clipping
     scaler = GradScaler()  # Initialize the gradient scaler for mixed precision training
+
+    with open("nn_label_encoder.pkl", 'wb') as f:
+        pickle.dump(label_encoder, f)
+    print(f"LabelEncoder saved as trans_label_encoder.pkl.")
 
     for epoch in range(epochs):
         model.train()
@@ -157,9 +161,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
             torch.save(model.state_dict(), model_path)
-            with open("transformer_label_encoder.pkl", 'wb') as f:
-                pickle.dump(label_encoder, f)
-            print("Model and LabelEncoder saved.")
+            print("Model saved.")
 
     print(f"Training completed. Best model saved to {model_path}.")
 
@@ -170,23 +172,23 @@ def main(fasta_file, model_path):
     encoded_seqs, label_encoder = encode_sequences(sequences)  # Note the direct capture of the fitted encoder
     vocab_size = len(label_encoder.classes_) + 1  # Plus one for padding
 
-    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=4)
+    train_seqs, val_seqs = train_test_split(encoded_seqs, test_size=0.3, random_state=64)
 
     print("Building model...")
     train_dataset = ProteinSequenceDataset(train_seqs)
     val_dataset = ProteinSequenceDataset(val_seqs)
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate, pin_memory=True,
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=pad_collate, pin_memory=True,
                               num_workers=1)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate, pin_memory=True,
+    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, collate_fn=pad_collate, pin_memory=True,
                             num_workers=1)
 
     model = TransformerProteinGenerator(vocab_size).to(device)
-    optimiser = optim.Adam(model.parameters(), lr=0.005)
+    optimiser = optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
     print("Training model...")
-    train(model, train_loader, val_loader, optimiser, criterion, epochs=20, model_path=model_path,
+    train(model, train_loader, val_loader, optimiser, criterion, epochs=50, model_path=model_path,
           label_encoder=label_encoder)  # Passing the fitted encoder
 
 
