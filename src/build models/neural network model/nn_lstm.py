@@ -153,3 +153,4 @@ if __name__ == "__main__":
     fasta_file = "uniprot_sprot.fasta"  # Update the path as necessary
     model_path = "nn_model.pt"  # Update the path as necessary
     main(fasta_file, model_path)
+
