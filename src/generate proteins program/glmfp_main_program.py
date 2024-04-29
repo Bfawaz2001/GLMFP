@@ -40,6 +40,24 @@ def defaultdict_int():
     return defaultdict(int)
 
 
+def parse_fasta(file_path):
+    """Parses a FASTA file and yields sequence ID and sequence pairs."""
+    with open(file_path, 'r') as fasta_file:
+        seq_id = None
+        sequence = []
+        for line in fasta_file:
+            line = line.strip()
+            if line.startswith(">"):
+                if seq_id:  # Yield the previous sequence before starting a new one
+                    yield seq_id, ''.join(sequence)
+                seq_id = line[1:]  # Capture the sequence ID immediately after '>'
+                sequence = []  # Reset sequence for the next entry
+            else:
+                sequence.append(line)
+        if seq_id:  # Ensure the last sequence in the file is also yielded
+            yield seq_id, ''.join(sequence)
+
+
 class LSTMProteinGenerator(nn.Module):
     """LSTM model for protein sequence generation."""
     def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers):
@@ -102,24 +120,6 @@ class TransformerProteinGenerator(nn.Module):
         return output
 
 
-def parse_fasta(file_path):
-    """Parses a FASTA file and yields sequence ID and sequence pairs."""
-    with open(file_path, 'r') as fasta_file:
-        seq_id = None
-        sequence = []
-        for line in fasta_file:
-            line = line.strip()
-            if line.startswith(">"):
-                if seq_id:  # Yield the previous sequence before starting a new one
-                    yield seq_id, ''.join(sequence)
-                seq_id = line[1:]  # Capture the sequence ID immediately after '>'
-                sequence = []  # Reset sequence for the next entry
-            else:
-                sequence.append(line)
-        if seq_id:  # Ensure the last sequence in the file is also yielded
-            yield seq_id, ''.join(sequence)
-
-
 def load_ngram_model(filename):
     """
     Load a model from a file using pickle.
@@ -147,7 +147,6 @@ def load_nn_model_and_encoder(model_path, encoder_path):
     - model: The loaded NN (LSTM) model.
     - label_encoder: The loaded label encoder.
     """
-    # Load the model with map_location=torch.device('cpu') to ensure tensors are loaded onto the CPU
     model = LSTMProteinGenerator(vocab_size=26, embedding_dim=64, hidden_dim=128, num_layers=4)
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.eval()  # Set the model to evaluation mode
@@ -417,7 +416,7 @@ def generate_proteins_nn_interface(model, model_type, encoder):
 
     with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
         for i in range(num_proteins):
-            protein = generate_nn_protein(model, encoder, min_length, max_length)
+            protein = generate_complex_protein(model, encoder, min_length, max_length)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
             file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
 
@@ -439,7 +438,7 @@ def generate_proteins_trans_interface(model, model_type, encoder):
 
     with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
         for i in range(num_proteins):
-            protein = generate_trans_protein(model, encoder, min_length, max_length)
+            protein = generate_complex_protein(model, encoder, min_length, max_length)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
             file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
 
@@ -472,8 +471,8 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
 
         # Continue adding amino acids based on the 2mer model probabilities until the desired length is reached.
         while len(protein) < length:
-            next_aa = random.choices(list(model['bigram_model'][current_aa].keys()),
-                                     weights=model['bigram_model'][current_aa].values())[0]
+            next_aa = random.choices(list(model['2mer_model'][current_aa].keys()),
+                                     weights=model['2mer_model'][current_aa].values())[0]
             protein.append(next_aa)
             current_aa = next_aa
 
@@ -487,7 +486,7 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
 
         # Generate the rest of the protein sequence based on 3mer model probabilities.
         while len(protein) < length:
-            next_aa_options = model['trigram_model'].get(current_pair, {})
+            next_aa_options = model['3mer_model'].get(current_pair, {})
             if next_aa_options:
                 next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
                 protein.append(next_aa)
@@ -505,7 +504,7 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
         current_4mer = start_4mer
 
         while len(protein) < length:
-            next_aa_options = model['model'].get(current_4mer, {})
+            next_aa_options = model['5mer_model'].get(current_4mer, {})
             if next_aa_options:
                 next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
                 protein.append(next_aa)
@@ -522,7 +521,7 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
         current_5mer = start_5mer
 
         while len(protein) < length:
-            next_aa_options = model['model'].get(current_5mer, {})
+            next_aa_options = model['6mer_model'].get(current_5mer, {})
             if next_aa_options:
                 next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
                 protein.append(next_aa)
@@ -530,83 +529,43 @@ def generate_ngram_protein(model, min_length, max_length, model_type):
             else:
                 break  # If no valid continuation is found
 
-    elif model_type == '10mer':
-        start_9mers = list(model['start_9mer_probs'].keys())
-        start_9mer_probs = list(model['start_9mer_probs'].values())
-        start_9mer = random.choices(start_9mers, weights=start_9mer_probs)[0]
-        protein.extend(list(start_9mer))
-        current_5mer = start_9mer
-
-        while len(protein) < length:
-            next_aa_options = model['model'].get(current_5mer, {})
-            if next_aa_options:
-                next_aa = random.choices(list(next_aa_options.keys()), weights=next_aa_options.values())[0]
-                protein.append(next_aa)
-                current_5mer = ''.join(protein[-9:])
-            else:
-                break  # If no valid continuation is found
-
     return ''.join(protein)  # Convert the list of amino acids back into a string and return it.
 
 
-def generate_nn_protein(model, label_encoder, min_length, max_length, temperature=1.5):
-    start_seq = 'M'
-    device = next(model.parameters()).device
-    sequence = [label_encoder.transform([start_seq])[0]]
-    generated_sequence = start_seq
-    target_length = random.randint(min_length, max_length)
-
-    while len(generated_sequence) < target_length:
-        current_input = torch.tensor([sequence[-50:]], dtype=torch.long).to(device)
-        with torch.no_grad():
-            output = model(current_input)
-            output = output[:, -1, :] / temperature  # Scale the logits before applying softmax
-            probabilities = F.softmax(output, dim=1)
-            next_index = torch.multinomial(probabilities, 1).item()
-
-        next_aa = label_encoder.inverse_transform([next_index])[0]
-        generated_sequence += next_aa
-        sequence.append(next_index)
-
-    return generated_sequence
-
-
-def generate_trans_protein(model, label_encoder, min_length, max_length):
+def generate_complex_protein(model, label_encoder, min_length, max_length, temperature=1.5):
     """
-    Generate a protein sequence using the Transformer model, starting with a seed sequence.
+        Generate a protein sequence using the Neural Network or Transformer model, starting with a seed sequence.
 
-    Parameters:
-    - model: The loaded Transformer model.
-    - label_encoder: The loaded label encoder.
-    - min_length (int): Minimum length of the generated protein sequence.
-    - max_length (int): Maximum length of the generated protein sequence.
+        Parameters:
+        - model: The loaded model either Neural Network LSTM or Transformer.
+        - label_encoder: The loaded label encoder.
+        - min_length (int): Minimum length of the generated protein sequence.
+        - max_length (int): Maximum length of the generated protein sequence.
 
-    Returns:
-    - The generated protein sequence as a string.
-    """
+        Returns:
+        - The generated protein sequence as a string.
+        """
     # Initialize with the start sequence 'M' (Methionine)
     start_seq = 'M'
     device = next(model.parameters()).device  # Identify if the model is on CPU or GPU
     sequence = [label_encoder.transform([start_seq])[0]]  # Encode the start sequence
     generated_sequence = start_seq  # Start the sequence with Methionine
-    sequence_length = random.randint(min_length, max_length)  # Determine the target sequence length
-
-    model.eval()  # Set the model to evaluation mode
+    target_length = random.randint(min_length, max_length)  # Determine the target sequence length
 
     with torch.no_grad():
-        while len(generated_sequence) < sequence_length:
+        while len(generated_sequence) < target_length:
             input_tensor = torch.tensor([sequence[-50:]], dtype=torch.long).to(device)  # Prepare the input tensor
             output = model(input_tensor)  # Obtain logits from the model
-            output = output[:, -1, :]  # Focus on the last output predictions
+            output = output[:, -1, :] / temperature  # Focus on the last output predictions
             probabilities = F.softmax(output, dim=1)  # Apply softmax to convert logits to probabilities
-            next_index = torch.multinomial(probabilities, 1).item()  # Sample from the probability distribution
+            next_index = torch.multinomial(probabilities, 1).item()
+            # Sample from the probability distribution
 
             next_aa = label_encoder.inverse_transform([next_index])[0]  # Decode the predicted index back to amino acid
             generated_sequence += next_aa  # Append the predicted amino acid to the generated sequence
             sequence.append(next_index)  # Update the sequence with the predicted index for next iteration
 
     return generated_sequence
-
 
 
 def run_diamond_blastp(fasta_file, diamond_db_path, database):
@@ -626,9 +585,7 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
                         reporting purposes.
 
     Returns:
-        None: This function does not return any value. It prints out the status of the operation, including the number
-              of matched proteins and the average identity percentage if matches are found, or a message indicating no
-              matches were found.
+        None.
 
     Raises:
         subprocess.CalledProcessError: If the DIAMOND BLASTP command fails during execution, this error is raised with
@@ -740,38 +697,9 @@ def run_interpro_scan(selected_file, email):
         csv_output_file = os.path.join(results_directory, "{}_summary.txt".format(selected_file.removesuffix('.fasta')))
         write_interpro_summary(summary, csv_output_file)
         print("Annotations summary saved to {}".format(csv_output_file))
+
     except Exception as e:
         print("An error occurred while parsing or writing the summary: {}".format(e))
-
-
-def diamond_blastp_menu(selected_file):
-    """
-    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
-
-    Args:
-    selected_file (str): The filename of the selected FASTA file for analysis.
-
-    The function supports comparing the selected file against the NCBI nr database,
-    labeling functionalities (InterProScan), and visualizing proteins (AlphaFold).
-    Future implementations can replace 'pass' with actual function calls.
-    """
-    print("\nDIAMOND BLASTp Menu")
-    print("1. Compare against NCBI nr (non-redundant proteins) database")
-    print("2. Compare against Reviewed SwissProt proteins (training data) database")
-    print("3. Go back to Main Menu")
-    option = input("Select an option for analysis: ")
-
-    if option == '1':
-        database = 'nr'
-        run_diamond_blastp(selected_file, DIAMOND_NR_DB_PATH, database)
-    elif option == '2':
-        database = 'swissprot'
-        run_diamond_blastp(selected_file, DIAMOND_SwissProt_DB_PATH, database)
-    elif option == "3":
-        print("\nGoing Back to main menu...")
-    else:
-        print("\nInvalid option. Returning to main menu.")
-        return
 
 
 def summary_protein_sequences(selected_file):
@@ -829,6 +757,35 @@ def summary_protein_sequences(selected_file):
 
         print("\nSummary file saved to {}".format(summary_path))
         print("Amino Acid composition graphs saved to {}.".format(graphs_directory))
+
+
+def diamond_blastp_menu(selected_file):
+    """
+    Presents analysis tool options for the selected FASTA file and executes the chosen analysis.
+
+    Args:
+    selected_file (str): The filename of the selected FASTA file for analysis.
+
+    The function supports comparing the selected file against the NCBI nr database, as well as the
+    training data.
+    """
+    print("\nDIAMOND BLASTp Menu")
+    print("1. Compare against NCBI nr (non-redundant proteins) database")
+    print("2. Compare against Reviewed SwissProt proteins (training data) database")
+    print("3. Go back to Main Menu")
+    option = input("Select an option for analysis: ")
+
+    if option == '1':
+        database = 'nr'
+        run_diamond_blastp(selected_file, DIAMOND_NR_DB_PATH, database)
+    elif option == '2':
+        database = 'swissprot'
+        run_diamond_blastp(selected_file, DIAMOND_SwissProt_DB_PATH, database)
+    elif option == "3":
+        print("\nGoing Back to main menu...")
+    else:
+        print("\nInvalid option. Returning to main menu.")
+        return
 
 
 def analysis_options(selected_file):
@@ -918,7 +875,7 @@ def run_trans_model():
     generate_proteins_trans_interface(model, model_type, encoder)
 
 
-def ngram_model_menu():
+def ngram_menu():
     """
     Display the model selection menu and handle user input.
     """
@@ -927,33 +884,29 @@ def ngram_model_menu():
     print("2. 3-mer")
     print("3. 5-mer")
     print("4. 6-mer")
-    print("5. 10-mer")
-    print("6. Back to Main Menu")
+    print("5. Back to Main Menu")
     choice = input("Enter your choice: ")
 
     if choice == '1':
         model_type = '2mer'
-        filename = NGRAM_MODEL_PATH + '2mer_model.pkl'
+        selected_model = NGRAM_MODEL_PATH + '2mer_model.pkl'
     elif choice == '2':
         model_type = '3mer'
-        filename = NGRAM_MODEL_PATH + '3mer_model.pkl'
+        selected_model = NGRAM_MODEL_PATH + '3mer_model.pkl'
     elif choice == '3':
         model_type = '5mer'
-        filename = NGRAM_MODEL_PATH + '5mer_model.pkl'
-    elif choice == '4':  # Assuming '4' is the new option for 6-mer
+        selected_model = NGRAM_MODEL_PATH + '5mer_model.pkl'
+    elif choice == '4':
         model_type = '6mer'
-        filename = NGRAM_MODEL_PATH + '6mer_model.pkl'
+        selected_model = NGRAM_MODEL_PATH + '6mer_model.pkl'
     elif choice == '5':
-        model_type = '10mer'
-        filename = NGRAM_MODEL_PATH + '10mer_model.pkl'
-    elif choice == '6':
         print("\nGoing back to Main Menu...")
         return
     else:
         print("Invalid choice. Returning to main menu.")
         return
 
-    model = load_ngram_model(filename)
+    model = load_ngram_model(selected_model)
     generate_proteins_ngram_interface(model, model_type)
 
 
@@ -969,7 +922,7 @@ def model_menu():
     choice = input("Enter your choice: ")
 
     if choice == '1':
-        ngram_model_menu()
+        ngram_menu()
     elif choice == '2':
         run_nn_model()
     elif choice == '3':
@@ -1010,3 +963,4 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
+
