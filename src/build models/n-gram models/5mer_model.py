@@ -37,7 +37,7 @@ def build_5mer_model(fasta_file):
     for prefix, suffixes in model.items():
         total = sum(suffixes.values())
         for suffix in suffixes:
-            suffixes[suffix] /= total
+            suffixes[suffix] = suffixes[suffix] / total
 
     total_starts = sum(start_4mer_counts.values())
     start_4mer_probs = {k: v / total_starts for k, v in start_4mer_counts.items()}
@@ -54,8 +54,10 @@ def save_model(model, start_4mer_probs, filename):
     - start_4mer_probs: Probabilities of starting 4-mers.
     - filename: The filename to save the model.
     """
+    regular_dict_model = {prefix: dict(suffixes) for prefix, suffixes in model.items()}
+    model_data = {'5mer_model': regular_dict_model, 'start_4mer_probs': dict(start_4mer_probs)}
     with open(filename, 'wb') as f:
-        pickle.dump({'model': model, 'start_4mer_probs': start_4mer_probs}, f)
+        pickle.dump(model_data, f)
 
 
 def main():
