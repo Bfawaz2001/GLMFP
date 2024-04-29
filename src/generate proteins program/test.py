@@ -29,34 +29,59 @@ class ModelLoadingTestCases(unittest.TestCase):
         model = load_ngram_model(model_path)
 
         # Verify the model contains the correct keys
-        self.assertIn('2mer_model', model)
-        self.assertIn('start_amino_acids', model)
-        self.assertIn('start_amino_acid_probs', model)
+        self.assertIn('2mer_model', model, "2mer_model key is missing in the loaded model")
+        self.assertIn('start_amino_acids', model, "start_amino_acids key is missing in the loaded model")
+        self.assertIn('start_amino_acid_probs', model, "start_amino_acid_probs key is missing in the "
+                                                       "loaded model")
 
     def test_load_3mer_model(self):
         model_path = NGRAM_MODEL_PATH + '3mer_model.pkl'
         model = load_ngram_model(model_path)
 
         # Verify the model contains the correct keys
-        self.assertIn('3mer_model', model)
-        self.assertIn('start_2mers', model)
-        self.assertIn('start_2mer_probs', model)
+        self.assertIn('3mer_model', model, "3mer_model key is missing in the loaded model")
+        self.assertIn('start_2mers', model, "start_2mers key is missing in the loaded model")
+        self.assertIn('start_2mer_probs', model, "start_2mer_probs key is missing in the loaded model")
 
     def test_load_5mer_model(self):
         model_path = NGRAM_MODEL_PATH + '5mer_model.pkl'
         model = load_ngram_model(model_path)
 
         # Verify the model contains the correct keys
-        self.assertIn('5mer_model', model)
-        self.assertIn('start_4mer_probs', model)
+        self.assertIn('5mer_model', model, "5mer_model key is missing in the loaded model")
+        self.assertIn('start_4mer_probs', model, "start_4mer_probs key is missing in the loaded model")
 
     def test_load_6mer_model(self):
         model_path = NGRAM_MODEL_PATH + '6mer_model.pkl'
         model = load_ngram_model(model_path)
 
         # Verify the model contains the correct keys
-        self.assertIn('6mer_model', model)
-        self.assertIn('start_5mer_probs', model)
+        self.assertIn('6mer_model', model, "6mer_model key is missing in the loaded model")
+        self.assertIn('start_5mer_probs', model, "start_5mer_probs key is missing in the loaded model")
+
+    def test_load_nn_model_and_encoder(self):
+        model_path = NN_MODEL_PATH + 'nn_model.pt'
+        encoder_path = NN_MODEL_PATH + 'nn_label_encoder.pkl'
+        model, label_encoder = load_nn_model_and_encoder(model_path, encoder_path)
+
+        # Check if the model has the expected methods and encoder is loaded
+        self.assertTrue(hasattr(model, 'forward'), "Loaded model is missing the 'forward' method.")
+        self.assertTrue(callable(getattr(model, 'forward')), "Model's 'forward' attribute is not callable.")
+        self.assertTrue(hasattr(label_encoder, 'transform'), "Label encoder does not have 'transform' method.")
+        self.assertTrue(callable(getattr(label_encoder, 'transform')),"Label encoder's 'transform' method is not "
+                                                                      "callable.")
+
+    def test_load_trans_model_and_encoder(self):
+        model_path = TRANS_MODEL_PATH + 'transformer_model.pt'
+        encoder_path = TRANS_MODEL_PATH + 'transformer_label_encoder.pkl'
+        model, label_encoder = load_trans_model_and_encoder(model_path, encoder_path)
+
+        # Check if the model has the expected methods and encoder is loaded
+        self.assertTrue(hasattr(model, 'forward'), "Loaded model is missing the 'forward' method.")
+        self.assertTrue(callable(getattr(model, 'forward')), "Model's 'forward' attribute is not callable.")
+        self.assertTrue(hasattr(label_encoder, 'transform'), "Label encoder does not have 'transform' method.")
+        self.assertTrue(callable(getattr(label_encoder, 'transform')), "Label encoder's 'transform' method is not"
+                                                                       " callable.")
 
 
 class ProteinGenerationTestCases(unittest.TestCase):
