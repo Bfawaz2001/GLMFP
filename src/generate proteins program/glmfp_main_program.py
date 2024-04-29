@@ -30,6 +30,8 @@ DIAMOND_RESULTS_PATH = "../../results/diamond blastp results/"
 DIAMOND_NR_DB_PATH = "../../data/diamond db/nr.dmnd"
 DIAMOND_SwissProt_DB_PATH = "../../data/diamond db/uniprot_sprot.dmnd"
 
+
+
 # InterProScan script path and user email address
 IPRSCAN5_PATH = "../../data/interpro script/iprscan5.py"
 EMAIL = "b.fawaz2001@gmail.com"
