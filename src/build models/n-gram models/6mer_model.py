@@ -25,19 +25,17 @@ def build_6mer_model(fasta_file):
     for record in SeqIO.parse(fasta_file, "fasta"):
         sequence = str(record.seq).upper()
         if len(sequence) >= 6:
-            # Increment count for the starting 5-mer
             start_5mer_counts[sequence[:5]] += 1
-            # Update 6-mer counts
             for i in range(len(sequence) - 5):
-                prefix = sequence[i:i+5]
-                suffix = sequence[i+5]
+                prefix = sequence[i:i + 5]
+                suffix = sequence[i + 5]
                 model[prefix][suffix] += 1
 
-    # Normalize counts to probabilities
+    # Convert counts to probabilities
     for prefix, suffixes in model.items():
         total = sum(suffixes.values())
         for suffix in suffixes:
-            suffixes[suffix] /= total
+            suffixes[suffix] = suffixes[suffix] / total
 
     total_starts = sum(start_5mer_counts.values())
     start_5mer_probs = {k: v / total_starts for k, v in start_5mer_counts.items()}
@@ -54,8 +52,10 @@ def save_model(model, start_5mer_probs, filename):
         start_5mer_probs (dict): The start 5-mer probabilities.
         filename (str): The path where to save the model.
     """
+    regular_dict_model = {prefix: dict(suffixes) for prefix, suffixes in model.items()}
+    model_data = {'6mer_model': regular_dict_model, 'start_5mer_probs': dict(start_5mer_probs)}
     with open(filename, 'wb') as f:
-        pickle.dump({'model': model, 'start_5mer_probs': start_5mer_probs}, f)
+        pickle.dump(model_data, f)
 
 
 def main():
@@ -75,3 +75,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
