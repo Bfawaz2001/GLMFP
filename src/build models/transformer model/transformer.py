@@ -63,7 +63,8 @@ class PositionalEncoding(nn.Module):
         pe = torch.zeros(max_len, d_model)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)  # Shape [sequence length, 1, embedding size] for correct broadcasting
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        # Shape [sequence length, 1, embedding size] for correct broadcasting
         self.register_buffer('pe', pe)
 
     def forward(self, x):
@@ -156,7 +157,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         val_loss_avg = val_loss / len(val_loader)
         scheduler.step(val_loss_avg)
 
-        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, Validation Loss: {val_loss_avg}')
+        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {train_loss / len(train_loader)}, '
+              f'Validation Loss: {val_loss_avg}')
 
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
