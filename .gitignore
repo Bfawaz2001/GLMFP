@@ -161,8 +161,8 @@ cython_debug/
 
 # Ignore directories
 data/diamond db
-data/alpha fold results
 data/eggnog db
 data/models/n-gram
 data/models/neural network
+data/training data
 data/models/transformer
