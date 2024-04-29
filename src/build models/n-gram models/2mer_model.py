@@ -45,7 +45,8 @@ def save_model(model, start_amino_acid_counts, start_amino_acid_probs, filename)
     - start_amino_acid_probs: Starting amino acid probabilities to be saved.
     - filename: Path to the file where the model and counts will be saved.
     """
-    model_data = {'bigram_model': model, 'start_amino_acids': dict(start_amino_acid_counts), 'start_amino_acid_probs': start_amino_acid_probs}
+    model_data = {'2mer_model': model, 'start_amino_acids': dict(start_amino_acid_counts),
+                  'start_amino_acid_probs': start_amino_acid_probs}
     with open(filename, 'wb') as file:
         pickle.dump(model_data, file)
 
