@@ -163,5 +163,6 @@ cython_debug/
 data/diamond db
 data/alpha fold results
 data/eggnog db
+data/models/n-gram
 data/models/neural network
 data/models/transformer
