@@ -50,7 +50,7 @@ def save_model(model, start_2mer_counts, start_2mer_probs, filename):
     - start_2mer_probs: Starting 2-mer probabilities to be saved.
     - filename: Path to the file where the model and counts will be saved.
     """
-    model_data = {'trigram_model': model, 'start_2mers': dict(start_2mer_counts), 'start_2mer_probs': start_2mer_probs}
+    model_data = {'3mer_model': model, 'start_2mers': dict(start_2mer_counts), 'start_2mer_probs': start_2mer_probs}
     with open(filename, 'wb') as file:
         pickle.dump(model_data, file)
 
