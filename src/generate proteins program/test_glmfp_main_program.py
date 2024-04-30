@@ -5,7 +5,7 @@ from glmfp_main_program import *
 
 # PATH for test data
 TEST_DATA_PATH = '../../data/test data'
-TEST_DATA_FILE_PATH = '../../data/test data/test.fasta'
+TEST_DATA_FILE_PATH = '../../data/test data/test_proteins.fasta'
 
 
 class ModelLoadingTestCases(unittest.TestCase):
@@ -163,7 +163,7 @@ class AnalysisToolsTestCases(unittest.TestCase):
         self.assertAlmostEqual(composition['M'], 2.37, 2)
 
     def test_calculate_amino_acid_composition_is_valid(self):
-        """ Calculate amino acid composition using real protein sequences. """
+        """ Validates amino acid composition contains only valid amino acids. """
         sequences = list(parse_fasta(self.fasta_file))  # Using actual parsing function
         composition = calculate_amino_acid_composition(sequences)
         # Just ensure that it returns a dictionary containing amino acid keys
