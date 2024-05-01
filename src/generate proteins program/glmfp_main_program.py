@@ -4,6 +4,8 @@ import time
 import subprocess
 import os
 import json
+from datetime import datetime
+
 import torch
 import torch.nn as nn
 import pickle
@@ -226,7 +228,7 @@ def calculate_shannon_entropy(sequence):
 
 def clean_sequence(sequence):
     """Remove 'X' in the protein sequence."""
-    cleaned_sequence = sequence.replace('X', '')
+    cleaned_sequence = sequence.replace('X', '').replace('Z', '').replace('B', '')
     return cleaned_sequence
 
 
@@ -394,40 +396,21 @@ def generate_proteins_ngram_interface(model, model_type):
     min_length = int(input("Enter the minimum length of the amino acids: "))
     max_length = int(input("Enter the maximum length of the amino acids: "))
 
+    start_time = time.time()
     with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
         for i in range(num_proteins):
             protein = generate_ngram_protein(model, min_length, max_length, model_type)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
             file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+    end_time = time.time()
 
-    print("Generated proteins saved to {}".format(output_filename))
+    print("Generated proteins saved to {}, and took {:.2f} seconds to complete.".format(output_filename, end_time -
+                                                                                   start_time))
 
 
-def generate_proteins_nn_interface(model, model_type, encoder):
+def generate_complex_proteins_interface(model, model_type, encoder):
     """
-    Interface for generating proteins using the selected model.
-    """
-    base_filename = input("\nEnter the name for the generated proteins file (without extension, "
-                          "model name added automatically to beginning): ")
-
-    output_filename = "{}_{}.fasta".format(model_type, base_filename)
-
-    num_proteins = int(input("Enter the number of proteins to be created: "))
-    min_length = int(input("Enter the minimum length of the amino acids: "))
-    max_length = int(input("Enter the maximum length of the amino acids: "))
-
-    with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
-        for i in range(num_proteins):
-            protein = generate_complex_protein(model, encoder, min_length, max_length)
-            formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
-            file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
-
-    print("Generated proteins saved to {}".format(output_filename))
-
-
-def generate_proteins_trans_interface(model, model_type, encoder):
-    """
-    Interface for generating proteins using the selected model.
+    Interface for generating proteins using either a NN LSTM or Transformer model.
     """
     base_filename = input("\nEnter the name for the generated proteins file (without extension, "
                           "model name added automatically to beginning): ")
@@ -438,13 +421,16 @@ def generate_proteins_trans_interface(model, model_type, encoder):
     min_length = int(input("Enter the minimum length of the amino acids: "))
     max_length = int(input("Enter the maximum length of the amino acids: "))
 
+    start_time = time.time()
     with open(GENERATED_PROTEINS_RESULTS_PATH + output_filename, 'w') as file:
         for i in range(num_proteins):
             protein = generate_complex_protein(model, encoder, min_length, max_length)
             formatted_protein = '\n'.join(protein[j:j + 60] for j in range(0, len(protein), 60))
             file.write(">Protein_{}\n{}\n".format(i + 1, formatted_protein))
+    end_time = time.time()
 
-    print("Generated proteins saved to {}".format(output_filename))
+    print("Generated proteins saved to {}, and took {:.2f} seconds to complete.".format(output_filename, end_time -
+                                                                                    start_time))
 
 
 def generate_ngram_protein(model, min_length, max_length, model_type):
@@ -606,6 +592,8 @@ def run_diamond_blastp(fasta_file, diamond_db_path, database):
         '--outfmt', '5',
         '--max-target-seqs', '5',
         '--evalue', '1e-3',
+        '--block-size', '5',
+        '--fast'
     ]
 
     try:
@@ -865,7 +853,7 @@ def run_nn_model():
     encoder_path = NN_MODEL_PATH + 'nn_label_encoder.pkl'
 
     model, encoder = load_nn_model_and_encoder(model_path, encoder_path)
-    generate_proteins_nn_interface(model, model_type, encoder)
+    generate_complex_proteins_interface(model, model_type, encoder)
 
 
 def run_trans_model():
@@ -874,7 +862,7 @@ def run_trans_model():
     encoder_path = TRANS_MODEL_PATH + 'transformer_label_encoder.pkl'
 
     model, encoder = load_trans_model_and_encoder(model_path, encoder_path)
-    generate_proteins_trans_interface(model, model_type, encoder)
+    generate_complex_proteins_interface(model, model_type, encoder)
 
 
 def ngram_menu():
