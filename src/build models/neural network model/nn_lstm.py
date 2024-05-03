@@ -71,7 +71,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     best_val_loss = float('inf')
     scaler = GradScaler()  # For AMP
 
-    with open("nn_label_encoder.pkl", 'wb') as f:
+    with open("../../../data/models/neural network/nn_label_encoder.pkl", 'wb') as f:
         pickle.dump(label_encoder, f)
     print(f"LabelEncoder saved as nn_label_encoder.pkl.")
 
@@ -116,8 +116,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
             torch.save(model.state_dict(), model_path)
-            with open("nn_label_encoder.pkl", 'wb') as f:
-                pickle.dump(label_encoder, f)
             print("Model saved.")
 
     print(f"Training completed. Best model saved to {model_path}.")
@@ -150,7 +148,6 @@ def main(fasta_file, model_path):
 
 
 if __name__ == "__main__":
-    fasta_file = "uniprot_sprot.fasta"  # Update the path as necessary
-    model_path = "nn_model.pt"  # Update the path as necessary
+    fasta_file = "../../../data/training data/uniprot_sprot.fasta"  # Update the path as necessary
+    model_path = "../../../data/models/neural network/nn_model.pt"  # Update the path as necessary
     main(fasta_file, model_path)
-

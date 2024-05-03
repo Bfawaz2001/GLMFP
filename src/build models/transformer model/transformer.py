@@ -108,9 +108,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, model_p
     max_grad_norm = 1.0  # Define maximum gradient norm for clipping
     scaler = GradScaler()  # Initialize the gradient scaler for mixed precision training
 
-    with open("nn_label_encoder.pkl", 'wb') as f:
+    with open("../../../data/models/transformer/transformer_label_encoder.pkl", 'wb') as f:
         pickle.dump(label_encoder, f)
-    print(f"LabelEncoder saved as trans_label_encoder.pkl.")
+    print(f"LabelEncoder saved as transformer_label_encoder.pkl.")
 
     for epoch in range(epochs):
         model.train()
@@ -195,4 +195,5 @@ def main(fasta_file, model_path):
 
 
 if __name__ == "__main__":
-    main("uniprot_sprot.fasta", "transformer_model.pt")
+    main("../../../data/training data/uniprot_sprot.fasta",
+         "../../../data/models/transformer/transformer_model.pt")
