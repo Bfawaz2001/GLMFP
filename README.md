@@ -4,7 +4,6 @@
 The GLMFP project develops a Command Line Interface (CLI) that implements various language models to generate realistic synthetic protein sequences. These models include N-gram, LSTM, and Transformer models, all trained using the Reviewed Swiss-Prot database. This project aims to provide a user-friendly interface that incorporates all functionalities for generating and analyzing proteins in one seamless program.
 
 ## Environment Setup
-
 ### Dependencies
 - Python 3.9.18
 - Diamond 2.1.9
@@ -31,6 +30,78 @@ conda install pandas
 conda install scikit-learn
 pip install torch==2.2.0
 ```
+### Diamond Databases
+First, make sure you have DIAMOND installed. DIAMOND is a high-throughput program for aligning sequences using a double 
+indexing strategy. It can be installed on most Unix-based systems (including MacOS) and Windows. Here's how you can 
+install DIAMOND on a Unix-based system:
+
+```bash
+# Install using conda (recommended for easier management)
+conda install -c bioconda diamond
+
+# Or, you can download and install it manually
+wget http://github.com/bbuchfink/diamond/releases/download/v0.9.36/diamond-linux64.tar.gz
+tar xzf diamond-linux64.tar.gz
+sudo mv diamond /usr/local/bin
+```
+Ensure you have sufficient storage space, as the nr database and its DIAMOND format are very large (several tens of GBs).
+
+#### NCBI Non-Redundant Proteins Database
+The `nr.dnmd` file was not included because it is over 300GB. However, you can download the NCBI nr database using the wget or curl command. The database is available in FASTA format from 
+NCBI's FTP server: 
+
+```bash
+# Create a directory for the database
+mkdir ncbi_nr
+cd ncbi_nr
+
+# Download the nr database (compressed in gz format)
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
+
+# If wget is not available, you can use curl
+curl -O ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
+
+# Decompress the file
+gunzip nr.gz
+```
+
+Once the nr database is downloaded and uncompressed, you can use DIAMOND to convert the FASTA file into a DIAMOND 
+database (.dmnd). This step is crucial for allowing fast alignments:
+
+```bash 
+# Building a DIAMOND database
+diamond makedb --in nr -d nr.dmnd
+```
+
+The -d option specifies the filename of the DIAMOND database. The command above creates a file called nr.dmnd in the 
+current directory, which should be moved to `./data/diamond db/` directory to be used in the `glmfp_main_program.py`.
+
+
+#### SwissProt Database
+The `uniprot_sprot.dmnd` is provided with the program and can be created by first downloading the Reviewed SwissProt 
+FASTA file. Here is how to do that:
+
+```bash 
+# Create a directory for the database
+mkdir uniprot_sprot
+cd uniprot_sprot
+
+# Download the UniProt Swiss-Prot database in FASTA format
+wget ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+
+# Decompress the file
+gunzip uniprot_sprot.fasta.gz
+```
+Once you have the FASTA file, you can use DIAMOND to build a database from it. This is done using the makedb command in 
+DIAMOND:
+
+```bash 
+# Building a DIAMOND database from the UniProt Swiss-Prot FASTA file
+diamond makedb --in uniprot_sprot.fasta -d uniprot_sprot.dmnd
+```
+
+The databse should then be moved to the `./data/diamond db/` directory.
+
 ## Running the Models on an HPC System
 
 ### Prerequisites

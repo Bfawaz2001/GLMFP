@@ -4,8 +4,6 @@ import time
 import subprocess
 import os
 import json
-from datetime import datetime
-
 import torch
 import torch.nn as nn
 import pickle
